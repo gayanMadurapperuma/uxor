@@ -1,0 +1,21 @@
+Config.load -CALLS-> Config (src/services/config.ts) 1.00
+UserService -EXTENDS-> BaseService (src/base.ts) 1.00
+UserService -IMPLEMENTS-> UserLookup (src/services/userService.ts) 1.00
+UserService.getUserById -CALLS-> BaseService.log (src/base.ts) 1.00
+UserService.getUserById -CALLS-> Repo.findById (src/repo.ts) 0.50
+UserService.getUserById -CALLS-> debug (src/logging/index.ts) 1.00
+UserService.returns a user -CALLS-> UserLookup.getUserById (src/services/userService.ts) 0.25
+UserService.returns a user -CALLS-> UserService (src/services/userService.ts) 1.00
+UserService.returns a user -CALLS-> UserService.getUserById (src/services/userService.ts) 0.25
+UserService.returns a user -TESTS-> UserLookup.getUserById (src/services/userService.ts) 0.25
+UserService.returns a user -TESTS-> UserService (src/services/userService.ts) 1.00
+UserService.returns a user -TESTS-> UserService.getUserById (src/services/userService.ts) 0.25
+file:src/App.tsx -IMPORTS-> file:src/services/userService.ts 1.00
+file:src/services/userService.test.ts -IMPORTS-> file:src/services/userService.ts 1.00
+file:src/services/userService.test.ts -TESTS-> file:src/services/userService.ts 1.00
+file:src/services/userService.ts -IMPORTS-> file:src/base.ts 1.00
+file:src/services/userService.ts -IMPORTS-> file:src/logging/index.ts 1.00
+file:src/services/userService.ts -IMPORTS-> file:src/repo.ts 1.00
+file:src/services/userService.ts -IMPORTS-> file:src/services/config.ts 1.00
+internalHelper -CALLS-> Config.load (src/services/config.ts) 1.00
+lookup -CALLS-> UserLookup.getUserById (src/services/userService.ts) 1.00

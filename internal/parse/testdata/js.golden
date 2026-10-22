@@ -1,0 +1,20 @@
+== lib/cart.js (javascript, 26 loc)
+  module    lib/cart 1-26 exported=true parent=-1 | 
+  class     Cart 4-16 exported=true parent=0 | class Cart
+  method    Cart.constructor 5-7 exported=true parent=1 | constructor()
+  method    Cart.addItem 9-11 exported=true parent=1 | addItem(item)
+  method    Cart.total 13-15 exported=true parent=1 | total()
+  function  createCart 18-20 exported=true parent=0 | function createCart()
+  function  formatTotal 22-24 exported=true parent=0 | const formatTotal = function (cart)
+  lib/cart IMPORTS name="./math" qual="sum" member="sum" L1
+  lib/cart IMPORTS name="util" qual="util" member="*" L2
+  Cart.addItem CALLS name="push" qual="this.items" member="" L10
+  Cart.total CALLS name="sum" qual="" member="" L14
+  Cart.total CALLS name="map" qual="this.items" member="" L14
+  createCart CALLS name="Cart" qual="" member="" L19
+  formatTotal CALLS name="format" qual="util" member="" L23
+  formatTotal CALLS name="total" qual="cart" member="" L23
+== lib/math.js (javascript, 5 loc)
+  module    lib/math 1-5 exported=true parent=-1 | 
+  function  sum 1-3 exported=true parent=0 | function sum(xs)
+  sum CALLS name="reduce" qual="xs" member="" L2

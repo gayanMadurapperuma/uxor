@@ -1,0 +1,5 @@
+{
+  // project config
+  "extends": "./tsconfig.base.json",
+  "include": ["src"],
+}

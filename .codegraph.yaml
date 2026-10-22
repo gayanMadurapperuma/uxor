@@ -1,0 +1,3 @@
+# codegraph config for this repository. All keys are optional.
+exclude:
+  - "**/testdata/**"   # parser fixtures would pollute retrieval over our own code

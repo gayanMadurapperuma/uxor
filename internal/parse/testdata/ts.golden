@@ -1,0 +1,58 @@
+== src/App.tsx (typescript, 6 loc)
+  module    src/App 1-6 exported=true parent=-1 | 
+  function  App 4-6 exported=true parent=0 | function App(props: { name: string })
+  src/App IMPORTS name="react" qual="React" member="default" L1
+  src/App IMPORTS name="./services/userService" qual="UserService" member="UserService" L2
+== src/base.ts (typescript, 5 loc)
+  module    src/base 1-5 exported=true parent=-1 | 
+  class     BaseService 1-5 exported=true parent=0 | class BaseService
+  method    BaseService.log 2-4 exported=false parent=1 | protected log(msg: string): string
+== src/logging/index.ts (typescript, 3 loc)
+  module    src/logging/index 1-3 exported=true parent=-1 | 
+  function  debug 1-3 exported=true parent=0 | function debug(...args: unknown[]): void
+  debug CALLS name="log" qual="console" member="" L2
+== src/repo.ts (typescript, 10 loc)
+  module    src/repo 1-10 exported=true parent=-1 | 
+  interface User 1-4 exported=true parent=0 | interface User
+  class     Repo 6-10 exported=true parent=0 | class Repo
+  method    Repo.findById 7-9 exported=true parent=2 | findById(id: number): Promise<User | undefined>
+  Repo.findById CALLS name="resolve" qual="Promise" member="" L8
+== src/services/config.ts (typescript, 7 loc)
+  module    src/services/config 1-7 exported=true parent=-1 | 
+  class     Config 1-7 exported=true parent=0 | class Config
+  method    Config.load 4-6 exported=true parent=1 | static load(): Config
+  Config.load CALLS name="Config" qual="" member="" L5
+== src/services/userService.test.ts (typescript, 8 loc)
+  module    src/services/userService.test 1-8 exported=true parent=-1 | 
+  test      UserService 3-8 exported=false parent=0 | describe("UserService")
+  test      UserService.returns a user 4-7 exported=false parent=1 | it("returns a user")
+  src/services/userService.test IMPORTS name="./userService" qual="UserService" member="UserService" L1
+  UserService.returns a user CALLS name="UserService" qual="" member="" L5
+  UserService.returns a user CALLS name="fakeRepo" qual="" member="" L5
+  UserService.returns a user CALLS name="toBeDefined" qual="?" member="" L6
+  UserService.returns a user CALLS name="getUserById" qual="svc" member="" L6
+== src/services/userService.ts (typescript, 42 loc)
+  module    src/services/userService 1-42 exported=true parent=-1 | 
+  interface UserLookup 6-8 exported=true parent=0 | interface UserLookup
+  method    UserLookup.getUserById 7-7 exported=true parent=1 | getUserById(id: number): Promise<User | undefined>
+  type      UserId 10-10 exported=true parent=0 | type UserId = number
+  class     UserService 12-28 exported=true parent=0 | class UserService extends BaseService implements UserLookup
+  method    UserService.constructor 15-17 exported=true parent=4 | constructor(private readonly repo: Repo)
+  method    UserService.getUserById 19-23 exported=true parent=4 | async getUserById(id: number): Promise<User | undefined>
+  method    UserService.cacheKey 25-27 exported=false parent=4 | private cacheKey(id: number): string
+  function  formatUser 30-32 exported=true parent=0 | const formatUser = (u: User): string
+  function  internalHelper 34-36 exported=false parent=0 | function internalHelper(x: number)
+  function  lookup 40-42 exported=true parent=0 | function lookup(svc: UserLookup, id: number)
+  src/services/userService IMPORTS name="../repo" qual="Repo" member="Repo" L1
+  src/services/userService IMPORTS name="../repo" qual="User" member="User" L1
+  src/services/userService IMPORTS name="@app/logging" qual="log" member="*" L2
+  src/services/userService IMPORTS name="./config" qual="defaultConfig" member="default" L3
+  src/services/userService IMPORTS name="@app/base" qual="BaseService" member="BaseService" L4
+  UserService EXTENDS name="BaseService" qual="" member="" L12
+  UserService IMPLEMENTS name="UserLookup" qual="" member="" L12
+  UserService.getUserById CALLS name="debug" qual="log" member="" L20
+  UserService.getUserById CALLS name="log" qual="this" member="" L21
+  UserService.getUserById CALLS name="findById" qual="this.repo" member="" L22
+  formatUser CALLS name="trim" qual="u.name" member="" L31
+  internalHelper CALLS name="load" qual="defaultConfig" member="" L35
+  lookup CALLS name="getUserById" qual="svc" member="" L41

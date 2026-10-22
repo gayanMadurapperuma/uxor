@@ -1,0 +1,42 @@
+== api/handler.go (go, 35 loc)
+  module    api 1-35 exported=true parent=-1 | 
+  type      api.Handler 10-13 exported=true parent=0 | type Handler struct
+  function  api.NewHandler 15-17 exported=true parent=0 | func NewHandler() *Handler
+  method    api.Handler.Show 19-25 exported=true parent=0 | func (h *Handler) Show(id int) string
+  method    api.Handler.format 27-29 exported=false parent=0 | func (h *Handler) format(u *store.User) string
+  function  api.Render 32-35 exported=true parent=0 | func Render(repo store.Repository, id int) string
+  api IMPORTS name="fmt" qual="fmt" member="" L4
+  api IMPORTS name="example.com/shop/store" qual="store" member="" L6
+  api.Handler EXTENDS name="Repository" qual="store" member="" L11
+  api.NewHandler CALLS name="Handler" qual="" member="" L16
+  api.NewHandler CALLS name="NewMemRepo" qual="store" member="" L16
+  api.Handler.Show CALLS name="GetUserByID" qual="h.repo" member="" L20
+  api.Handler.Show CALLS name="Sprint" qual="fmt" member="" L22
+  api.Handler.Show CALLS name="format" qual="h" member="" L24
+  api.Render CALLS name="GetUserByID" qual="repo" member="" L33
+== store/user.go (go, 48 loc)
+  module    store 1-48 exported=true parent=-1 | 
+  var       store.ErrNotFound 9-9 exported=true parent=0 | var ErrNotFound = errors.New("not found")
+  var       store.MaxUsers 12-12 exported=true parent=0 | const MaxUsers = 100
+  var       store.defaultTTL 13-13 exported=false parent=0 | const defaultTTL = 30
+  type      store.User 17-20 exported=true parent=0 | type User struct
+  interface store.Repository 23-25 exported=true parent=0 | type Repository interface
+  method    store.Repository.GetUserByID 24-24 exported=true parent=5 | GetUserByID(id int) (*User, error)
+  type      store.userID 27-27 exported=false parent=0 | type userID = int
+  type      store.memRepo 29-31 exported=false parent=0 | type memRepo struct
+  function  store.NewMemRepo 34-36 exported=true parent=0 | func NewMemRepo() *memRepo
+  method    store.memRepo.GetUserByID 38-44 exported=true parent=0 | func (r *memRepo) GetUserByID(id int) (*User, error)
+  function  store.normalize 46-48 exported=false parent=0 | func normalize(name string) string
+  store IMPORTS name="errors" qual="errors" member="" L4
+  store IMPORTS name="strings" qual="str" member="" L5
+  store.ErrNotFound CALLS name="New" qual="errors" member="" L9
+  store.NewMemRepo CALLS name="memRepo" qual="" member="" L35
+  store.normalize CALLS name="ToLower" qual="str" member="" L47
+  store.normalize CALLS name="TrimSpace" qual="str" member="" L47
+== store/user_test.go (go, 10 loc)
+  module    store 1-10 exported=true parent=-1 | 
+  test      store.TestGetUserByID 5-10 exported=true parent=0 | func TestGetUserByID(t *testing.T)
+  store IMPORTS name="testing" qual="testing" member="" L3
+  store.TestGetUserByID CALLS name="NewMemRepo" qual="" member="" L6
+  store.TestGetUserByID CALLS name="GetUserByID" qual="r" member="" L7
+  store.TestGetUserByID CALLS name="Fatal" qual="t" member="" L8

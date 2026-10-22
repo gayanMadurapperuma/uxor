@@ -1,0 +1,16 @@
+api.Handler -EXTENDS-> store.Repository (store/user.go) 1.00
+api.Handler.Show -CALLS-> api.Handler.format (api/handler.go) 1.00
+api.Handler.Show -CALLS-> store.Repository.GetUserByID (store/user.go) 0.25
+api.Handler.Show -CALLS-> store.memRepo.GetUserByID (store/user.go) 0.25
+api.NewHandler -CALLS-> api.Handler (api/handler.go) 1.00
+api.NewHandler -CALLS-> store.NewMemRepo (store/user.go) 1.00
+api.Render -CALLS-> store.Repository.GetUserByID (store/user.go) 1.00
+file:api/handler.go -IMPORTS-> file:store/user.go 1.00
+file:store/user_test.go -TESTS-> file:store/user.go 1.00
+store.NewMemRepo -CALLS-> store.memRepo (store/user.go) 1.00
+store.TestGetUserByID -CALLS-> store.NewMemRepo (store/user.go) 1.00
+store.TestGetUserByID -CALLS-> store.Repository.GetUserByID (store/user.go) 0.25
+store.TestGetUserByID -CALLS-> store.memRepo.GetUserByID (store/user.go) 0.25
+store.TestGetUserByID -TESTS-> store.NewMemRepo (store/user.go) 1.00
+store.TestGetUserByID -TESTS-> store.Repository.GetUserByID (store/user.go) 0.25
+store.TestGetUserByID -TESTS-> store.memRepo.GetUserByID (store/user.go) 0.25

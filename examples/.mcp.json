@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "codegraph": {
+      "args": [
+        "--root",
+        "${CLAUDE_PROJECT_DIR:-.}",
+        "serve"
+      ],
+      "command": "codegraph",
+      "type": "stdio"
+    }
+  }
+}

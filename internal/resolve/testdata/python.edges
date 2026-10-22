@@ -1,0 +1,17 @@
+app.models.User -EXTENDS-> app.models.Base (app/models.py) 1.00
+app.models.User.display_name -CALLS-> app.models.Base.save (app/models.py) 1.00
+app.services.users.UserService -EXTENDS-> app.models.Base (app/models.py) 1.00
+app.services.users.UserService.get_user_by_id -CALLS-> app.services.helpers.clean (app/services/helpers.py) 1.00
+app.services.users._private_helper -CALLS-> app.services.users._private_helper.inner (app/services/users.py) 1.00
+app.services.users.describe -CALLS-> app.models.User.display_name (app/models.py) 1.00
+file:app/__init__.py -IMPORTS-> file:app/models.py 1.00
+file:app/services/users.py -IMPORTS-> file:app/models.py 1.00
+file:app/services/users.py -IMPORTS-> file:app/services/helpers.py 1.00
+file:tests/test_users.py -IMPORTS-> file:app/__init__.py 1.00
+file:tests/test_users.py -IMPORTS-> file:app/services/users.py 1.00
+file:tests/test_users.py -TESTS-> file:app/__init__.py 0.50
+file:tests/test_users.py -TESTS-> file:app/services/users.py 1.00
+tests.test_users.TestUserService.test_get_user_by_id -CALLS-> app.services.users.UserService (app/services/users.py) 1.00
+tests.test_users.TestUserService.test_get_user_by_id -TESTS-> app.services.users.UserService (app/services/users.py) 1.00
+tests.test_users.test_load_users -CALLS-> app.models.User (app/models.py) 1.00
+tests.test_users.test_load_users -TESTS-> app.models.User (app/models.py) 1.00

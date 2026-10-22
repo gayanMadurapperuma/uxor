@@ -1,0 +1,38 @@
+## get user by id  (78 tokens)
+app/services/users.py:13-24  class UserService(ModelBase)  # match
+  app/services/users.py:19-21  def get_user_by_id(self, user_id: int) -> Optional[User]  # match
+  app/services/users.py:23-24  def _cache_key(self, user_id)  # match
+tests/test_users.py:6-8  test def test_get_user_by_id(self)  # match
+app/services/helpers.py:1-5  def clean(user)  # match
+
+## save user model  (52 tokens)
+app/models.py:1-3  class Base  # match
+  app/models.py:2-3  def save(self)  # match
+app/models.py:6-12  class User(Base)  # match
+  app/models.py:10-12  def display_name(self)  # match
+app/services/users.py:13-24  class UserService(ModelBase)  # match
+
+## display name  (46 tokens)
+app/models.py:2-3  def save(self)  # called-by app.models.User.display_name
+app/models.py:7-8  def __init__(self, name)  # match
+app/models.py:10-12  def display_name(self)  # match
+app/services/users.py:37-38  def describe(user: User) -> str  # calls app.models.User.display_name
+
+## tests for user service  (216 tokens)
+app/services/users.py:10-10  var DEFAULT_LIMIT = 10  # match
+app/services/users.py:13-24  class UserService(ModelBase)  # match
+  app/services/users.py:16-17  def __init__(self, repo)  # match
+  app/services/users.py:19-21  def get_user_by_id(self, user_id: int) -> Optional[User]  # match
+  app/services/users.py:23-24  def _cache_key(self, user_id)  # match
+app/services/users.py:27-28  def load_users(path)  # match
+app/services/users.py:31-34  def _private_helper()  # match
+  app/services/users.py:32-33  def inner()  # match
+app/services/users.py:37-38  def describe(user: User) -> str  # match
+tests/test_users.py:5-8  test class TestUserService  # match
+  tests/test_users.py:6-8  test def test_get_user_by_id(self)  # match
+tests/test_users.py:11-13  test def test_load_users()  # match
+app/models.py:6-12  class User(Base)  # match
+  app/models.py:7-8  def __init__(self, name)  # match
+  app/models.py:10-12  def display_name(self)  # match
+app/services/helpers.py:1-5  def clean(user)  # match
+
