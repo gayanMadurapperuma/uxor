@@ -1,4 +1,4 @@
--- codegraph schema v1. Never stores source code: only paths, line ranges,
+-- uxor schema v1. Never stores source code: only paths, line ranges,
 -- names, signatures and hashes. Enum columns use parse.Kind / parse.EdgeType.
 
 CREATE TABLE files(

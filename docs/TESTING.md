@@ -1,7 +1,7 @@
-# Testing codegraph by hand
+# Testing uxor by hand
 
 Everything here works with what exists today: indexing, resolution,
-PageRank, and the project commands. `codegraph query` and the MCP tools come
+PageRank, and the project commands. `uxor query` and the MCP tools come
 in Phases 3–4. Until then, inspect the graph with `stats` and `sqlite3`,
 which ships with macOS.
 
@@ -9,18 +9,25 @@ which ships with macOS.
 
 ```bash
 make test    # go vet + go test ./... (expect every package "ok")
-make build   # writes bin/codegraph
+make build   # writes bin/uxor
 ```
 
 The Makefile handles an x86_64 Go running on an Apple Silicon Mac by building
 native arm64 binaries. Installing the darwin-arm64 Go from go.dev/dl makes
 that unnecessary.
 
-To avoid typing the full path below:
+**Install it** for Claude Code, whose hooks and MCP server run plain
+`uxor`, so it must be on PATH:
 
 ```bash
-alias codegraph="$PWD/bin/codegraph"
+make install     # builds, then installs to ~/bin/uxor (PREFIX=… to change)
 ```
+
+Always reinstall with `make install`, never `cp bin/uxor ~/bin/`: on
+macOS, copying over an existing binary keeps its stale code signature and the
+new one is killed on start (`zsh: killed uxor …`, exit 137). If that
+happens, `rm ~/bin/uxor` and install again. After reinstalling, restart
+open Claude sessions so their MCP servers use the new binary.
 
 ## 2. Index a repository
 
@@ -28,10 +35,15 @@ Use any repo with Go, Python, JS or TS:
 
 ```bash
 cd ~/path/to/repo
-codegraph index        # first run: full index + full resolve
-codegraph index        # second run: "0 parsed", well under a second
-codegraph stats
+uxor index        # first run: full index + full resolve
+uxor index        # second run: "0 parsed", well under a second
+uxor stats
 ```
+
+In a terminal, `index` and `init` show a live line while they work
+(`⠹ parsing 1,284 / 2,982 files 1.2s`), then one `✓` line per stage.
+Piped or redirected (`uxor index | cat`), they print the plain
+two-line summary that the rest of this guide quotes, with no escape codes.
 
 What to look for in `stats`:
 - **files / symbols / edges**: per-language file and line counts should
@@ -54,17 +66,17 @@ Edit a file, then re-index only that file. The edit hook will do the same.
 | Add a new function | still a handful of files |
 | Rename a function other files call | callers re-resolved; their edge to the old name is gone (query 4b) |
 | Add an import to a widely used module | importers re-resolved; slower, but correct |
-| Delete a file, then run `codegraph index` | `1 removed`; edges into it are gone |
-| Edit `go.mod` / `tsconfig.json` / `package.json`, then run `codegraph index` | `resolve (full)` |
+| Delete a file, then run `uxor index` | `1 removed`; edges into it are gone |
+| Edit `go.mod` / `tsconfig.json` / `package.json`, then run `uxor index` | `resolve (full)` |
 
 ```bash
-codegraph index path/to/edited_file.py
+uxor index path/to/edited_file.py
 ```
 
 ## 4. Inspect the graph
 
 ```bash
-sqlite3 -header -column .codegraph/index.db
+sqlite3 -header -column .uxor/index.db
 ```
 
 Edge types: 1 IMPORTS · 2 DEFINES · 3 CALLS · 4 EXTENDS · 5 IMPLEMENTS · 7 TESTS.
@@ -159,32 +171,32 @@ is kept.
 ## 5. Per-project controls and isolation
 
 ```bash
-codegraph forget secrets/      # drop matching files from the index and keep them out
-codegraph forget --list
-codegraph stats                # shows "forgotten: secrets/"
-codegraph unforget secrets/ && codegraph index
+uxor forget secrets/      # drop matching files from the index and keep them out
+uxor forget --list
+uxor stats                # shows "forgotten: secrets/"
+uxor unforget secrets/ && uxor index
 
-codegraph disable              # pause context injection (index kept)
-codegraph stats                # "state: DISABLED"
-codegraph enable
+uxor disable              # pause context injection (index kept)
+uxor stats                # "state: DISABLED"
+uxor enable
 
-codegraph clean                # asks, then deletes only this repo's .codegraph/
+uxor clean                # asks, then deletes only this repo's .uxor/
 ```
 
 To check isolation:
 1. Index two repos, A and B.
-2. Run `codegraph --root A clean`. B's `.codegraph/index.db` must still
+2. Run `uxor --root A clean`. B's `.uxor/index.db` must still
    exist.
-3. Run `codegraph --root A index ../B/some_file.go`. It processes nothing,
+3. Run `uxor --root A index ../B/some_file.go`. It processes nothing,
    because paths outside the project root are ignored.
 
-## 6. Try `codegraph query`
+## 6. Try `uxor query`
 
 ```bash
-codegraph query "get user by id"              # packed lines, ≤ 1,000 tokens
-codegraph query --why "csrf token rotation"   # + the reason for each line, tokens, ms
-codegraph query --budget 300 "remote write retry"
-codegraph query --json "formatUser" | jq .     # scores, why, per-stage timings_ms
+uxor query "get user by id"              # packed lines, ≤ 1,000 tokens
+uxor query --why "csrf token rotation"   # + the reason for each line, tokens, ms
+uxor query --budget 300 "remote write retry"
+uxor query --json "formatUser" | jq .     # scores, why, per-stage timings_ms
 ```
 
 Each line is `path:start-end  [kind] signature`; methods are indented
@@ -200,49 +212,62 @@ Things to check:
 - **Tests** rank below the code they test, unless the prompt mentions tests
   (`test`, `tests`, `spec`, or an identifier such as `test_foo`), in which
   case they rank above it.
-- **Hostile input** (`codegraph query '"*" - NEAR ( )'`) prints
+- **Hostile input** (`uxor query '"*" - NEAR ( )'`) prints
   `no matches`; it is never an FTS syntax error.
 - **Speed**: `--why` prints the total; `--json` shows `timings_ms` per stage
   (`seeds`, `expand`, `rank`, `pack`). The target is under 200 ms end to end.
   On macOS the first run of a freshly built binary takes about 0.5 s
   extra for the OS signature check; run it twice.
 - **A disabled project** still answers on the CLI, with a note on stderr.
-- **No index**: the error says to run `codegraph index`.
+- **No index**: the error says to run `uxor index`.
 
 Benchmark on a real repo:
-`CODEGRAPH_BENCH_ROOT=/path/to/indexed/repo go test -run x -bench FindRelevant ./internal/retrieve`
+`UXOR_BENCH_ROOT=/path/to/indexed/repo go test -run x -bench FindRelevant ./internal/retrieve`
 (under `make`'s environment on this machine; see §1).
 
 ## 7. Set up a project for Claude Code
 
 ```bash
-codegraph init --dry-run   # shows: .mcp.json / .claude/settings.json / CLAUDE.md  create|update|unchanged
-codegraph init             # writes them, then runs the first index
-codegraph init             # again: everything "unchanged"
-claude mcp list            # codegraph … ⏸ Pending approval
+uxor init --dry-run   # shows: .mcp.json / .claude/settings.json / CLAUDE.md  create|update|unchanged
+uxor init             # writes them, then runs the first index
+uxor init             # again: everything "unchanged"
+claude mcp list            # uxor … ⏸ Pending approval
 claude                     # approve the project server when asked; then /mcp lists its 5 tools
 ```
 
-`codegraph` must be on PATH for the hooks and the server; otherwise edit
+`uxor` must be on PATH for the hooks and the server; otherwise edit
 the `command` values to an absolute path. `init` won't overwrite them.
 In a session, check that:
 - a prompt such as "where is the user lookup?" shows the
-  "Likely relevant locations (codegraph; …)" block (Ctrl-O for the
+  "Likely relevant locations (uxor; …)" block (Ctrl-O for the
   transcript, or `claude --debug`);
-- after Claude edits a file, `codegraph stats` shows the new symbol and
+- after Claude edits a file, `uxor stats` shows the new symbol and
   "top PageRank (stale; …)";
-- `codegraph disable` makes the hook print nothing and the tools answer
-  "codegraph is disabled for this project".
+- `uxor disable` makes the hook print nothing and the tools answer
+  "uxor is disabled for this project".
 
 ## 8. Hooks by hand
 
 ```bash
-echo '{"cwd":"'$PWD'","prompt":"get user by id"}' | codegraph hook prompt | jq -r .hookSpecificOutput.additionalContext
-echo '{"cwd":"'$PWD'","prompt":"/compact"}' | CODEGRAPH_DEBUG=1 codegraph hook prompt   # codegraph hook: skipped: …
-echo '{"cwd":"'$PWD'","tool_name":"Edit","tool_input":{"file_path":"'$PWD'/src/repo.ts"}}' | CODEGRAPH_DEBUG=1 codegraph hook edited
-echo 'garbage' | codegraph hook prompt; echo "exit=$?"                                   # nothing, exit=0
+echo '{"cwd":"'$PWD'","prompt":"get user by id"}' | uxor hook prompt | jq -r .hookSpecificOutput.additionalContext
+echo '{"cwd":"'$PWD'","prompt":"/compact"}' | UXOR_DEBUG=1 uxor hook prompt   # uxor hook: skipped: …
+echo '{"cwd":"'$PWD'","tool_name":"Edit","tool_input":{"file_path":"'$PWD'/src/repo.ts"}}' | UXOR_DEBUG=1 uxor hook edited
+echo 'garbage' | uxor hook prompt; echo "exit=$?"                                   # nothing, exit=0
 ```
-Time the prompt hook with `time (echo … | codegraph hook prompt)`. The
+**See what the hook did inside Claude Code**: add `hook_log: true` to the
+project's `.uxor.yaml`. Every prompt and edit then appends one JSON line
+to `.uxor/hook.log`, with a prompt excerpt, the files returned, tokens,
+ms, and `injected` / `skipped: …` / `error: …`:
+```bash
+tail -f .uxor/hook.log | jq -c '{event, prompt, files, result, ms}'
+```
+It's off by default because it stores prompt text, locally only.
+
+**Refresh the CLAUDE.md note**: re-running `uxor init` updates the
+uxor block between its markers when the wording has changed
+(`CLAUDE.md  update: snippet refreshed`); your own text is untouched.
+
+Time the prompt hook with `time (echo … | uxor hook prompt)`. The
 budget is 300 ms; django measured p95 40 ms.
 
 ## 9. The MCP server by hand
@@ -253,12 +278,50 @@ budget is 300 ms; django measured p95 40 ms.
   '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"callers_of","arguments":{"symbol":"UserService.getUserById"}}}' \
   '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"impact_of","arguments":{"path":"../outside"}}}'; sleep 1 ) \
-  | codegraph serve | jq -c '.result.content[0].text // .result'
+  | uxor serve | jq -c '.result.content[0].text // .result'
 ```
 Expect callers with `(guess …)` markers, and `outside this project` with
-`isError: true`. Alternatively run `npx @modelcontextprotocol/inspector codegraph serve`.
+`isError: true`. Alternatively run `npx @modelcontextprotocol/inspector uxor serve`.
 
-## 10. When something looks wrong
+## 10. Measure retrieval with `uxor eval`
+
+The eval replays history: each recent non-merge commit's subject is a
+query, and the indexed files it changed are the answer.
+
+```bash
+git clone --depth 500 https://github.com/django/django.git /tmp/django   # history needed
+uxor --root /tmp/django index
+uxor --root /tmp/django eval --commits 20                 # fast, at HEAD: optimistic
+uxor --root /tmp/django eval --commits 20 --checkout-parent --savings -v
+git -C /tmp/django worktree list                               # only the main checkout is left
+make eval REPO=/tmp/django N=100                               # the Phase 5 baseline run
+```
+- **Modes.**
+  - HEAD mode needs an index and leaks the answer, because the index
+    already holds each change.
+  - `--checkout-parent` indexes every commit's parent in a temporary
+    worktree, oldest first and incrementally, so it is slower but honest.
+  - Expect lower numbers from checkout-parent; if they aren't lower,
+    something leaks.
+- **Reading the table.**
+  - `r@5`/`r@10` is the share of changed files in the full ranking's top
+    5/10.
+  - `mrr` is the reciprocal rank of the first changed file.
+  - `hook hit` and `query hit` mean a changed file is in the real answer at
+    the hook budget (500 tokens, 5 files) or the query budget (1,000).
+  - `tune` is the oldest two thirds of the commits, `holdout` the newest
+    third. Tune on `tune`; `holdout` shows whether that overfit.
+- **Sweeping constants.** Write a JSON file with the fields to change
+  (names are in `internal/retrieve/tuning.go`), e.g.
+  `{"hop_decay": 0.3, "edges": {"IMPORTS": [0.1, 0.1]}}`. Repeat `--tuning`
+  to compare several against the same indexes; the first is the main run.
+- **Savings** (`--savings`, checkout-parent only): scenarios A–D in tokens,
+  defined in `internal/eval/savings.go` and DECISIONS. Use `--json` for
+  every task's numbers.
+- Commits with no indexable changed files or more than `--max-files` (20)
+  are skipped and counted. Added files are never part of the answer.
+
+## 11. When something looks wrong
 
 - **A call edge is missing**: run query (h) to see the raw ref.
   - A qualifier of `?` means the receiver was an expression, such as a call
@@ -272,7 +335,7 @@ Expect callers with `(guess …)` markers, and `outside this project` with
   any name, signature or path; try the identifier. The stopword list is in
   `internal/retrieve/tokenize.go`.
 - **No hook block in a session**: run the hook by hand (§8) with the same
-  cwd and `CODEGRAPH_DEBUG=1`. "skipped: no index" means `codegraph index`
-  hasn't run there; "disabled" means `codegraph enable`.
-- **Reset everything**: `codegraph index --full`, or `codegraph clean -y` to
+  cwd and `UXOR_DEBUG=1`. "skipped: no index" means `uxor index`
+  hasn't run there; "disabled" means `uxor enable`.
+- **Reset everything**: `uxor index --full`, or `uxor clean -y` to
   delete this repo's index.

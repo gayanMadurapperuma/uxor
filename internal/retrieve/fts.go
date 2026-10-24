@@ -6,54 +6,69 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/parse"
+	"github.com/gayanmadurapperuma/uxor/internal/parse"
 )
 
-// Column weights for bm25 over symbols_fts(name, qualified_name, signature, path).
-const ftsRank = `bm25(symbols_fts, 10, 5, 2, 1)`
-
-// exactBoost is added to a seed whose name equals an identifier in the query.
-const exactBoost = 0.5
-
-// prefixMinLen is the shortest term that also matches as a prefix.
-const prefixMinLen = 4
-
 // FTS seeds from the full-text index of identifier-split names,
-// qualified names, signatures and paths.
-type FTS struct{ DB *sql.DB }
+// qualified names, signatures and paths. A nil Tuning means the defaults.
+type FTS struct {
+	DB     *sql.DB
+	Tuning *Tuning
+}
 
 // MatchExpr builds a MATCH expression in which every term is a quoted
 // string, so nothing in the prompt can become FTS5 syntax (NEAR, AND, -,
 // column filters, …). Terms of four or more characters also match as
-// prefixes ("user"* finds users, username).
-func MatchExpr(terms []string) string {
-	parts := make([]string, 0, len(terms))
-	for _, t := range terms {
+// prefixes ("user"* finds users, username); whole identifiers match their
+// marked token exactly, so a prefix never spans identifier words (D31);
+// phrases match adjacent words (D32).
+func MatchExpr(q Query) string { return matchExpr(q, DefaultTuning().PrefixMinLen, false) }
+
+func matchExpr(q Query, prefixMinLen int, wholePrefix bool) string {
+	quote := func(t string) string { return `"` + strings.ReplaceAll(t, `"`, `""`) + `"` }
+	parts := make([]string, 0, len(q.Terms)+len(q.Whole)+len(q.Phrases))
+	for _, t := range q.Terms {
 		if t == "" {
 			continue
 		}
-		p := `"` + strings.ReplaceAll(t, `"`, `""`) + `"`
+		p := quote(t)
 		if len([]rune(t)) >= prefixMinLen {
 			p += "*"
+			if wholePrefix {
+				parts = append(parts, quote(parse.WholeMarker+t)+"*")
+			}
 		}
 		parts = append(parts, p)
+	}
+	// A whole identifier is searched as the marked token (getUserById in
+	// code) and as a plain word, exactly (a directory or name "promql").
+	for _, w := range q.Whole {
+		if w != "" {
+			parts = append(parts, quote(parse.WholeTerm(w)), quote(w))
+		}
+	}
+	for _, ph := range q.Phrases {
+		if len(ph) > 0 {
+			parts = append(parts, quote(strings.Join(ph, " ")))
+		}
 	}
 	return strings.Join(parts, " OR ")
 }
 
 // Seeds ranks symbols by bm25, normalized so the best match scores 1, then
-// adds exactBoost for exact identifier matches. Identifiers are also looked
+// adds ExactBoost for exact identifier matches. Identifiers are also looked
 // up by name directly, so an exact hit is never lost to the bm25 cut.
 func (f *FTS) Seeds(ctx context.Context, q Query, n int) ([]Seed, error) {
+	t := f.Tuning.orDefault()
 	exact := map[string]bool{}
 	for _, id := range q.Idents {
 		exact[id] = true
 	}
 	byID := map[int64]*Seed{}
 
-	if expr := MatchExpr(q.Terms); expr != "" {
+	if expr := matchExpr(q, t.PrefixMinLen, t.WholePrefix); expr != "" {
 		rows, err := f.DB.QueryContext(ctx, `
-			SELECT s.id, s.name, `+ftsRank+` AS r
+			SELECT s.id, s.name, `+t.ftsRank()+` AS r
 			FROM symbols_fts JOIN symbols s ON s.id = symbols_fts.rowid
 			WHERE symbols_fts MATCH ? ORDER BY r LIMIT ?`, expr, 2*n)
 		if err != nil {
@@ -76,7 +91,7 @@ func (f *FTS) Seeds(ctx context.Context, q Query, n int) ([]Seed, error) {
 				s.Score = r / best
 			}
 			if exact[name] {
-				s.Score += exactBoost
+				s.Score += t.ExactBoost
 				s.Why = "match: exact name"
 			}
 			byID[id] = s
@@ -104,7 +119,7 @@ func (f *FTS) Seeds(ctx context.Context, q Query, n int) ([]Seed, error) {
 				return nil, err
 			}
 			if byID[id] == nil {
-				byID[id] = &Seed{ID: id, Score: exactBoost, Why: "match: exact name"}
+				byID[id] = &Seed{ID: id, Score: t.ExactBoost, Why: "match: exact name"}
 			}
 		}
 		rows.Close()

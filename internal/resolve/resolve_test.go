@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/config"
-	"github.com/gayanmadurapperuma/codegraph/internal/index"
-	"github.com/gayanmadurapperuma/codegraph/internal/resolve"
-	"github.com/gayanmadurapperuma/codegraph/internal/store"
+	"github.com/gayanmadurapperuma/uxor/internal/config"
+	"github.com/gayanmadurapperuma/uxor/internal/index"
+	"github.com/gayanmadurapperuma/uxor/internal/resolve"
+	"github.com/gayanmadurapperuma/uxor/internal/store"
 )
 
 // copyFixture copies testdata/fixtures/<name> into a fresh project dir.

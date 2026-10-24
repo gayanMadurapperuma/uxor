@@ -1,4 +1,4 @@
-module github.com/gayanmadurapperuma/codegraph
+module github.com/gayanmadurapperuma/uxor
 
 go 1.26.0
 

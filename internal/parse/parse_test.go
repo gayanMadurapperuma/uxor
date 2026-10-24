@@ -138,7 +138,7 @@ func TestGoExtraction(t *testing.T) {
 	rs := parseFixture(t, "go")
 	r := rs["store/user.go"]
 	checkSyms(t, r, []symWant{
-		{"store", KindModule, 1, 48, true},
+		{"store", KindModule, 1, 62, true},
 		{"store.ErrNotFound", KindVar, 9, 9, true},
 		{"store.defaultTTL", KindVar, 13, 13, false},
 		{"store.User", KindType, 17, 20, true},
@@ -146,7 +146,17 @@ func TestGoExtraction(t *testing.T) {
 		{"store.Repository.GetUserByID", KindMethod, 24, 24, true},
 		{"store.memRepo.GetUserByID", KindMethod, 38, 44, true},
 		{"store.normalize", KindFunction, 46, 48, false},
+		{"store.ValidNames", KindFunction, 51, 62, true},
+		// A named closure is a function under its enclosing function.
+		{"store.ValidNames.keep", KindFunction, 52, 54, false},
 	})
+	if findSym(r, "store.ValidNames.out") != nil {
+		t.Error("local var out became a symbol")
+	}
+	if !hasRef(r, "store.ValidNames.keep", EdgeCalls, "normalize", "", "") ||
+		!hasRef(r, "store.ValidNames", EdgeCalls, "keep", "", "") {
+		t.Error("closure calls not attributed: keep→normalize, ValidNames→keep")
+	}
 	if !hasRef(r, "store", EdgeImports, "strings", "str", "") {
 		t.Error("missing aliased import of strings")
 	}
@@ -240,7 +250,30 @@ func TestTypeScriptExtraction(t *testing.T) {
 		t.Error("test call not attributed to the it() block")
 	}
 	app := rs["src/App.tsx"]
-	checkSyms(t, app, []symWant{{"App", KindFunction, 4, 6, true}})
+	checkSyms(t, app, []symWant{
+		{"App", KindFunction, 4, 6, true},
+		{"AuthProvider", KindFunction, 8, 18, true},
+		// Named function-valued consts inside a function (React handlers)
+		// are symbols under their enclosing function.
+		{"AuthProvider.handleSignIn", KindFunction, 9, 12, false},
+		{"AuthProvider.handleReset", KindFunction, 13, 15, false},
+		// A class field holding an arrow function is a method.
+		{"Banner.handleDismiss", KindMethod, 21, 23, true}, // public member of an exported class
+	})
+	// Local non-function consts and anonymous callbacks are not symbols.
+	for _, q := range []string{"AuthProvider.label", "AuthProvider.user"} {
+		if findSym(app, q) != nil {
+			t.Errorf("unexpected symbol %s", q)
+		}
+	}
+	// Calls inside a handler belong to it; the inline onClick callback is
+	// anonymous, so its call belongs to the component.
+	if !hasRef(app, "AuthProvider.handleSignIn", EdgeCalls, "formatUser", "", "") {
+		t.Error("call in handleSignIn not attributed to it")
+	}
+	if !hasRef(app, "AuthProvider", EdgeCalls, "handleSignIn", "", "") {
+		t.Error("onClick call to handleSignIn not attributed to AuthProvider")
+	}
 }
 
 func TestJavaScriptExtraction(t *testing.T) {

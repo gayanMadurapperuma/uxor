@@ -4,7 +4,7 @@ import (
 	"context"
 	"math"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/parse"
+	"github.com/gayanmadurapperuma/uxor/internal/parse"
 )
 
 const (

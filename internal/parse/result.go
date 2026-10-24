@@ -2,6 +2,11 @@
 // using tree-sitter. Results are plain Go values; no cgo memory escapes.
 package parse
 
+// Version identifies the extraction rules. Bump it whenever the same
+// source would now yield different symbols or refs: the next whole-project
+// index then re-parses every file (D34). 2: nested named functions (D30).
+const Version = "2"
+
 // Kind is a symbol kind. Values are persisted; append only.
 type Kind uint8
 

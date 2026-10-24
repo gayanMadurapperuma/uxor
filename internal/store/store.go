@@ -22,8 +22,26 @@ var schemaV1 string
 //go:embed schema_v2.sql
 var schemaV2 string
 
+// migration upgrades user_version by one: SQL, then optional Go code in the
+// same transaction.
+type migration struct {
+	sql string
+	fn  func(ctx context.Context, tx *sql.Tx) error
+}
+
 // migrations[i] upgrades user_version i → i+1.
-var migrations = []string{schemaV1, schemaV2}
+var migrations = []migration{
+	{sql: schemaV1},
+	{sql: schemaV2},
+	// v3: whole identifiers are indexed with parse.WholeMarker (D31). The
+	// FTS rows are rebuilt from symbols and files, without re-parsing.
+	{fn: rebuildFTS},
+	// v4: every column marks each identifier it contains, paths and test
+	// titles included (D31); rebuilt the same way.
+	{fn: rebuildFTS},
+	// v5: underscores split words before marking (D35).
+	{fn: rebuildFTS},
+}
 
 // SchemaVersion is the user_version after all migrations.
 var SchemaVersion = len(migrations)
@@ -56,7 +74,7 @@ func Open(ctx context.Context, path string, opt Options) (*Store, error) {
 		}
 		f.Close()
 	} else if _, err := os.Stat(path); err != nil {
-		return nil, fmt.Errorf("no index at %s (run `codegraph index`): %w", path, err)
+		return nil, fmt.Errorf("no index at %s (run `uxor index`): %w", path, err)
 	}
 
 	q := url.Values{}
@@ -95,16 +113,25 @@ func (s *Store) migrate(ctx context.Context) error {
 		return err
 	}
 	if v > SchemaVersion {
-		return fmt.Errorf("index schema v%d is newer than this binary (v%d); run `codegraph clean`", v, SchemaVersion)
+		return fmt.Errorf("index schema v%d is newer than this binary (v%d); run `uxor clean`", v, SchemaVersion)
 	}
 	for ; v < SchemaVersion; v++ {
 		tx, err := s.db.BeginTx(ctx, nil)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, migrations[v]); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("migration %d: %w", v+1, err)
+		m := migrations[v]
+		if m.sql != "" {
+			if _, err := tx.ExecContext(ctx, m.sql); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", v+1, err)
+			}
+		}
+		if m.fn != nil {
+			if err := m.fn(ctx, tx); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", v+1, err)
+			}
 		}
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, v+1)); err != nil {
 			tx.Rollback()
@@ -164,4 +191,45 @@ func (s *Store) Meta(ctx context.Context, key string) (string, error) {
 		return "", nil
 	}
 	return v, err
+}
+
+// rebuildFTS rewrites every symbols_fts row from symbols and files.
+func rebuildFTS(ctx context.Context, tx *sql.Tx) error {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO symbols_fts(symbols_fts) VALUES('delete-all')`); err != nil {
+		return err
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT s.id, s.name, s.qualified_name, s.signature, f.path
+		FROM symbols s JOIN files f ON f.id = s.file_id`)
+	if err != nil {
+		return err
+	}
+	type row struct {
+		id                    int64
+		name, qname, sig, pth string
+	}
+	var all []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.name, &r.qname, &r.sig, &r.pth); err != nil {
+			rows.Close()
+			return err
+		}
+		all = append(all, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	ins, err := tx.PrepareContext(ctx, insertFTS)
+	if err != nil {
+		return err
+	}
+	defer ins.Close()
+	for _, r := range all {
+		if _, err := ins.ExecContext(ctx, ftsArgs(r.id, r.name, r.qname, r.sig, r.pth)...); err != nil {
+			return err
+		}
+	}
+	return nil
 }

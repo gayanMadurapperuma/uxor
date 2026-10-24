@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/parse"
+	"github.com/gayanmadurapperuma/uxor/internal/parse"
 )
 
 type LangCount struct {
@@ -177,6 +177,13 @@ func (s *Store) hubs(ctx context.Context, st *Stats, q string, args ...any) erro
 		st.Hubs = append(st.Hubs, h)
 	}
 	return rows.Err()
+}
+
+// FileCount returns the number of indexed files.
+func (s *Store) FileCount(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM files`).Scan(&n)
+	return n, err
 }
 
 // Paths returns all indexed file paths.

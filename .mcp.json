@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "uxor": {
+      "args": [
+        "--root",
+        "${CLAUDE_PROJECT_DIR:-.}",
+        "serve"
+      ],
+      "command": "uxor",
+      "type": "stdio"
+    }
+  }
+}

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/parse"
+	"github.com/gayanmadurapperuma/uxor/internal/parse"
 )
 
 func sample() *parse.FileResult {
@@ -77,11 +77,16 @@ func TestRoundTrip(t *testing.T) {
 	if n := count(t, st, `SELECT count(*) FROM refs`); n != 2 {
 		t.Errorf("refs = %d, want 2", n)
 	}
-	// Identifier splitting makes camelCase parts searchable.
-	for _, q := range []string{"user", "GetUserByID", "repo", "pkg"} {
+	// Identifier splitting makes camelCase parts searchable, and the whole
+	// identifier through its marked token (D31).
+	for _, q := range []string{"user", `"` + parse.WholeTerm("GetUserByID") + `"`, "repo", "pkg"} {
 		if n := count(t, st, `SELECT count(*) FROM symbols_fts WHERE symbols_fts MATCH ?`, q); n == 0 {
 			t.Errorf("FTS query %q found nothing", q)
 		}
+	}
+	// A prefix never spans identifier words: "getuserb" is no word's prefix.
+	if n := count(t, st, `SELECT count(*) FROM symbols_fts WHERE symbols_fts MATCH ?`, `"getuserb"*`); n != 0 {
+		t.Errorf("cross-word prefix matched %d rows", n)
 	}
 
 	states, err := st.FileStates(ctx)
@@ -148,5 +153,52 @@ func TestFilePermissionsAndReopen(t *testing.T) {
 func TestReadOnlyMissing(t *testing.T) {
 	if _, err := Open(context.Background(), filepath.Join(t.TempDir(), "none.db"), Options{ReadOnly: true}); err == nil {
 		t.Error("expected error opening a missing index read-only")
+	}
+}
+
+// TestMigrateV3RebuildsFTS: a v2 index, whose FTS rows hold unmarked whole
+// identifiers, is rewritten to the marked format when opened for writing.
+func TestMigrateV3RebuildsFTS(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "d", "index.db")
+	st, err := Open(ctx, path, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := FileMeta{Path: "pkg/user.go", Lang: "go", Hash: []byte{1}, Size: 10, MTime: 42, LOC: 20}
+	write(t, st, func(b *Batch) error { return b.ReplaceFile(ctx, meta, sample(), false) })
+	// Turn it back into a v2 index: old-format FTS rows, user_version 2.
+	db := st.DB()
+	for _, q := range []string{
+		`INSERT INTO symbols_fts(symbols_fts) VALUES('delete-all')`,
+		`INSERT INTO symbols_fts(rowid, name, qualified_name, signature, path)
+		   SELECT id, name || ' old', qualified_name, signature, 'pkg/user.go' FROM symbols`,
+		`PRAGMA user_version = 2`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := count(t, st, `SELECT count(*) FROM symbols_fts WHERE symbols_fts MATCH ?`, `"getuserb"*`); n == 0 {
+		t.Fatal("setup: the old format should allow the cross-word prefix")
+	}
+	st.Close()
+
+	st, err = Open(ctx, path, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if n := count(t, st, `PRAGMA user_version`); n != SchemaVersion {
+		t.Fatalf("user_version %d, want %d", n, SchemaVersion)
+	}
+	if n := count(t, st, `SELECT count(*) FROM symbols_fts WHERE symbols_fts MATCH ?`, `"getuserb"*`); n != 0 {
+		t.Errorf("after migration a cross-word prefix still matches %d rows", n)
+	}
+	if n := count(t, st, `SELECT count(*) FROM symbols_fts WHERE symbols_fts MATCH ?`, `"`+parse.WholeTerm("GetUserByID")+`"`); n != 1 {
+		t.Errorf("marked whole identifier matches %d rows, want 1", n)
+	}
+	if n := count(t, st, `SELECT count(*) FROM symbols_fts WHERE symbols_fts MATCH ?`, "old"); n != 0 {
+		t.Errorf("%d old-format rows survived", n)
 	}
 }

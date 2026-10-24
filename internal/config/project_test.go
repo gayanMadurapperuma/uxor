@@ -28,7 +28,7 @@ func TestFindRootAndLoad(t *testing.T) {
 	if p.Root != root {
 		t.Errorf("root = %s, want %s", p.Root, root)
 	}
-	if p.DBPath != filepath.Join(root, ".codegraph", "index.db") {
+	if p.DBPath != filepath.Join(root, ".uxor", "index.db") {
 		t.Errorf("db = %s", p.DBPath)
 	}
 	if len(p.Config.Exclude) != 1 || p.Config.Budgets.QueryTokens != 1000 {
@@ -119,7 +119,7 @@ func TestDisabledForgetClean(t *testing.T) {
 		t.Error("data dir still exists after Clean")
 	}
 	if _, err := os.Stat(filepath.Join(root, FileName)); err != nil {
-		t.Error("Clean must keep .codegraph.yaml")
+		t.Error("Clean must keep .uxor.yaml")
 	}
 }
 
@@ -138,7 +138,57 @@ func TestEnsureGitignore(t *testing.T) {
 		t.Error("second call should be a no-op")
 	}
 	b, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
-	if string(b) != "node_modules\n.codegraph/\n" {
+	if string(b) != "node_modules\n.uxor/\n" {
 		t.Errorf(".gitignore = %q", b)
+	}
+}
+
+func TestMigrateLegacy(t *testing.T) {
+	root, _ := filepath.EvalSymlinks(t.TempDir())
+	os.MkdirAll(filepath.Join(root, LegacyDataDirName), 0o700)
+	os.WriteFile(filepath.Join(root, LegacyDataDirName, "index.db"), []byte("db"), 0o600)
+	os.WriteFile(filepath.Join(root, LegacyFileName), []byte("budgets: {hook_top: 3}\n"), 0o644)
+	os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules/\n/.codegraph/\n"), 0o644)
+
+	// Before migrating: the legacy marker finds the root and its config is read.
+	if r, _ := FindRoot(root); r != root {
+		t.Errorf("legacy marker not a project root: %s", r)
+	}
+	if c, err := Load(root); err != nil || c.Budgets.HookTop != 3 {
+		t.Errorf("legacy config not read: %+v %v", c, err)
+	}
+
+	// Dry run reports and changes nothing.
+	notes, err := MigrateLegacy(root, true)
+	if err != nil || len(notes) != 3 {
+		t.Fatalf("dry run: %v %v", notes, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, LegacyDataDirName)); err != nil {
+		t.Fatal("dry run moved the data dir")
+	}
+
+	if notes, err = MigrateLegacy(root, false); err != nil || len(notes) != 3 {
+		t.Fatalf("migrate: %v %v", notes, err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, DataDirName, "index.db")); string(b) != "db" {
+		t.Error("index not moved to .uxor/")
+	}
+	if _, err := os.Stat(filepath.Join(root, FileName)); err != nil {
+		t.Error("config not renamed")
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, ".gitignore")); string(b) != "node_modules/\n/.uxor/\n" {
+		t.Errorf(".gitignore = %q", b)
+	}
+	if notes, _ := MigrateLegacy(root, false); len(notes) != 0 {
+		t.Errorf("second run: %v", notes)
+	}
+
+	// An existing target is never overwritten.
+	os.MkdirAll(filepath.Join(root, LegacyDataDirName), 0o700)
+	if notes, _ := MigrateLegacy(root, false); len(notes) != 0 {
+		t.Errorf("overwrote an existing .uxor/: %v", notes)
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, DataDirName, "index.db")); string(b) != "db" {
+		t.Error(".uxor/ was replaced")
 	}
 }

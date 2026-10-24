@@ -7,8 +7,9 @@ src/repo.ts:7-9  method findById(id: number): Promise<User | undefined>  # match
 src/base.ts:2-4  method protected log(msg: string): string  # called-by UserService.getUserById
 src/logging/index.ts:1-3  function debug(...args: unknown[]): void  # called-by UserService.getUserById
 
-## formatUser  (18 tokens)
+## formatUser  (33 tokens)
 src/services/userService.ts:30-32  const formatUser = (u: User): string  # match: exact name
+src/App.tsx:9-12  const handleSignIn = async (id: number)  # calls formatUser
 
 ## load config  (43 tokens)
 src/services/config.ts:1-7  class Config  # match

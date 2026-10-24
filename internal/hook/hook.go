@@ -14,14 +14,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/config"
-	"github.com/gayanmadurapperuma/codegraph/internal/index"
-	"github.com/gayanmadurapperuma/codegraph/internal/retrieve"
-	"github.com/gayanmadurapperuma/codegraph/internal/store"
+	"github.com/gayanmadurapperuma/uxor/internal/config"
+	"github.com/gayanmadurapperuma/uxor/internal/index"
+	"github.com/gayanmadurapperuma/uxor/internal/retrieve"
+	"github.com/gayanmadurapperuma/uxor/internal/store"
 )
 
 // PromptHeader introduces the injected locations.
-const PromptHeader = "Likely relevant locations (codegraph; read these line ranges before searching broadly):\n"
+const PromptHeader = "Likely relevant locations (uxor; read these line ranges before searching broadly):\n"
 
 // EditTimeout bounds the re-index after an edit.
 const EditTimeout = 2 * time.Second
@@ -70,6 +70,7 @@ type promptOutput struct {
 // locations within budgets.hook_timeout_ms; then it writes one JSON object
 // whose additionalContext Claude Code adds next to the prompt.
 func Prompt(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
+	start := time.Now()
 	var in promptPayload
 	if err := json.NewDecoder(stdin).Decode(&in); err != nil {
 		return err
@@ -82,28 +83,45 @@ func Prompt(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	res, err := prompt(ctx, p, text, stdout)
+	if p.Config.HookLog {
+		e := logEntry{Event: "prompt", Prompt: excerpt(text), MS: since(start)}
+		if res != nil {
+			e.Tokens = res.TokensUsed
+			for _, f := range res.Files {
+				e.Files = append(e.Files, f.Path)
+			}
+		}
+		appendLog(p, e, err)
+	}
+	return err
+}
+
+// prompt runs retrieval for a resolved project and writes the block. The
+// result is returned for the log even when it is not written.
+func prompt(ctx context.Context, p *config.Project, text string, stdout io.Writer) (*retrieve.Result, error) {
 	b := p.Config.Budgets
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(b.HookTimeoutMS)*time.Millisecond)
 	defer cancel()
 	st, err := store.Open(ctx, p.DBPath, store.Options{ReadOnly: true})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer st.Close()
 	res, err := retrieve.FindRelevant(ctx, st, p.Config, text, retrieve.Options{Budget: b.HookTokens, MaxFiles: b.HookTop})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if ctx.Err() != nil {
-		return ctx.Err() // late: print nothing rather than a stale block
+		return res, ctx.Err() // late: print nothing rather than a stale block
 	}
 	if res.Text == "" {
-		return skip("no matches")
+		return res, skip("no matches")
 	}
 	var out promptOutput
 	out.HookSpecificOutput.HookEventName = "UserPromptSubmit"
 	out.HookSpecificOutput.AdditionalContext = PromptHeader + res.Text
-	return json.NewEncoder(stdout).Encode(out)
+	return res, json.NewEncoder(stdout).Encode(out)
 }
 
 type editPayload struct {
@@ -119,6 +137,7 @@ var pathKeys = []string{"file_path", "notebook_path"}
 // returns how many paths it passed on. Paths outside the project are
 // ignored.
 func Edited(ctx context.Context, stdin io.Reader) (int, error) {
+	start := time.Now()
 	var in editPayload
 	if err := json.NewDecoder(stdin).Decode(&in); err != nil {
 		return 0, err
@@ -140,15 +159,25 @@ func Edited(ctx context.Context, stdin io.Reader) (int, error) {
 	if len(paths) == 0 {
 		return 0, skip("no paths in this project")
 	}
+	err = reindex(ctx, p, paths)
+	if p.Config.HookLog {
+		appendLog(p, logEntry{Event: "edited", Files: paths, MS: since(start)}, err)
+	}
+	if err != nil {
+		return 0, err
+	}
+	return len(paths), nil
+}
+
+// reindex runs a scoped index of paths under EditTimeout.
+func reindex(ctx context.Context, p *config.Project, paths []string) error {
 	ctx, cancel := context.WithTimeout(ctx, EditTimeout)
 	defer cancel()
 	st, err := store.Open(ctx, p.DBPath, store.Options{BusyTimeoutMS: int(EditTimeout / time.Millisecond)})
 	if err != nil {
-		return 0, err
+		return err
 	}
 	defer st.Close()
-	if _, err := index.Run(ctx, p, st, index.Options{Paths: paths}); err != nil {
-		return 0, err
-	}
-	return len(paths), nil
+	_, err = index.Run(ctx, p, st, index.Options{Paths: paths})
+	return err
 }

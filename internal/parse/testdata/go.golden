@@ -14,8 +14,8 @@
   api.Handler.Show CALLS name="Sprint" qual="fmt" member="" L22
   api.Handler.Show CALLS name="format" qual="h" member="" L24
   api.Render CALLS name="GetUserByID" qual="repo" member="" L33
-== store/user.go (go, 48 loc)
-  module    store 1-48 exported=true parent=-1 | 
+== store/user.go (go, 62 loc)
+  module    store 1-62 exported=true parent=-1 | 
   var       store.ErrNotFound 9-9 exported=true parent=0 | var ErrNotFound = errors.New("not found")
   var       store.MaxUsers 12-12 exported=true parent=0 | const MaxUsers = 100
   var       store.defaultTTL 13-13 exported=false parent=0 | const defaultTTL = 30
@@ -27,12 +27,16 @@
   function  store.NewMemRepo 34-36 exported=true parent=0 | func NewMemRepo() *memRepo
   method    store.memRepo.GetUserByID 38-44 exported=true parent=0 | func (r *memRepo) GetUserByID(id int) (*User, error)
   function  store.normalize 46-48 exported=false parent=0 | func normalize(name string) string
+  function  store.ValidNames 51-62 exported=true parent=0 | func ValidNames(names []string) []string
+  function  store.ValidNames.keep 52-54 exported=false parent=12 | keep := func(n string) bool
   store IMPORTS name="errors" qual="errors" member="" L4
   store IMPORTS name="strings" qual="str" member="" L5
   store.ErrNotFound CALLS name="New" qual="errors" member="" L9
   store.NewMemRepo CALLS name="memRepo" qual="" member="" L35
   store.normalize CALLS name="ToLower" qual="str" member="" L47
   store.normalize CALLS name="TrimSpace" qual="str" member="" L47
+  store.ValidNames.keep CALLS name="normalize" qual="" member="" L53
+  store.ValidNames CALLS name="keep" qual="" member="" L57
 == store/user_test.go (go, 10 loc)
   module    store 1-10 exported=true parent=-1 | 
   test      store.TestGetUserByID 5-10 exported=true parent=0 | func TestGetUserByID(t *testing.T)

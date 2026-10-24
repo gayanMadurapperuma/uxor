@@ -11,14 +11,14 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/config"
-	"github.com/gayanmadurapperuma/codegraph/internal/parse"
-	"github.com/gayanmadurapperuma/codegraph/internal/retrieve"
-	"github.com/gayanmadurapperuma/codegraph/internal/store"
+	"github.com/gayanmadurapperuma/uxor/internal/config"
+	"github.com/gayanmadurapperuma/uxor/internal/parse"
+	"github.com/gayanmadurapperuma/uxor/internal/retrieve"
+	"github.com/gayanmadurapperuma/uxor/internal/store"
 )
 
 // DisabledNotice is returned by every tool while the project is disabled.
-const DisabledNotice = "codegraph is disabled for this project (`codegraph enable` to resume); search the code directly."
+const DisabledNotice = "uxor is disabled for this project (`uxor enable` to resume); search the code directly."
 
 const (
 	symbolLimit   = 10 // get_symbol matches, and candidates for an ambiguous name
@@ -38,8 +38,8 @@ type Server struct {
 // New builds the MCP server and registers its tools.
 func New(p *config.Project, version string) *Server {
 	s := &Server{p: p}
-	s.srv = mcp.NewServer(&mcp.Implementation{Name: "codegraph", Version: version}, &mcp.ServerOptions{
-		Instructions: "codegraph indexes this repository's symbols and call graph. Call find_relevant before " +
+	s.srv = mcp.NewServer(&mcp.Implementation{Name: "uxor", Version: version}, &mcp.ServerOptions{
+		Instructions: "uxor indexes this repository's symbols and call graph. Call find_relevant before " +
 			"broad grep/glob searches; call get_symbol to locate a definition, and callers_of / callees_of / " +
 			"impact_of before refactoring. Results are file:line ranges to read, never code.",
 	})

@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/parse"
+	"github.com/gayanmadurapperuma/uxor/internal/parse"
 )
 
 // FileMeta is the per-file bookkeeping stored alongside parse results.
@@ -106,7 +106,7 @@ func (s *Store) Begin(ctx context.Context, opt BatchOptions) (*Batch, error) {
 		{&b.delDirty, `DELETE FROM resolve_dirty WHERE file_id = ?`},
 		{&b.insSym, `INSERT INTO symbols(file_id, kind, name, qualified_name, signature, start_line, end_line, exported)
 			VALUES(?, ?, ?, ?, ?, ?, ?, ?)`},
-		{&b.insFTS, `INSERT INTO symbols_fts(rowid, name, qualified_name, signature, path) VALUES(?, ?, ?, ?, ?)`},
+		{&b.insFTS, insertFTS},
 		{&b.insEdge, `INSERT OR IGNORE INTO edges(src_id, dst_id, type, weight) VALUES(?, ?, ?, ?)`},
 		{&b.insRef, `INSERT INTO refs(src_id, file_id, type, name, qualifier, member, line) VALUES(?, ?, ?, ?, ?, ?, ?)`},
 		// Stable-ID updates (tracked batches).
@@ -268,8 +268,17 @@ func (b *Batch) insertSymbol(ctx context.Context, fid int64, path string, r *par
 }
 
 func (b *Batch) writeFTS(ctx context.Context, path string, s parse.Symbol, id int64) error {
-	return b.exec(ctx, b.insFTS, id, parse.SplitText(s.Name), splitAll(s.QualifiedName),
-		splitAll(s.Signature), parse.SplitText(path))
+	return b.exec(ctx, b.insFTS, ftsArgs(id, s.Name, s.QualifiedName, s.Signature, path)...)
+}
+
+const insertFTS = `INSERT INTO symbols_fts(rowid, name, qualified_name, signature, path) VALUES(?, ?, ?, ?, ?)`
+
+// ftsArgs are the insertFTS values for one symbol: identifier-split text,
+// never source (D4, D31). Every column goes through splitAll, so each
+// identifier inside a path, qualified name or test title is marked on its
+// own (src/userService.ts → src 0userService user service ts).
+func ftsArgs(id int64, name, qname, sig, path string) []any {
+	return []any{id, splitAll(name), splitAll(qname), splitAll(sig), splitAll(path)}
 }
 
 // writeRefs inserts DEFINES edges and refs for freshly assigned ids.
@@ -522,8 +531,11 @@ func splitAll(s string) string {
 	if s == "" {
 		return ""
 	}
+	// Underscores split too: the FTS tokenizer splits on them anyway, so a
+	// snake_case "whole" could never be one token (and would get a stray
+	// marker on its first part).
 	words := strings.FieldsFunc(s, func(r rune) bool {
-		return !(r == '_' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r > 127)
+		return !(r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r > 127)
 	})
 	var b strings.Builder
 	for _, w := range words {

@@ -25,7 +25,7 @@ func TestSplit(t *testing.T) {
 }
 
 func TestSplitText(t *testing.T) {
-	if got := SplitText("getUserById"); got != "getUserById get user by id" {
+	if got := SplitText("getUserById"); got != "0getUserById get user by id" {
 		t.Errorf("got %q", got)
 	}
 	if got := SplitText("user"); got != "user" {

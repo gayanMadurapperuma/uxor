@@ -9,8 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/config"
-	"github.com/gayanmadurapperuma/codegraph/internal/store"
+	"github.com/gayanmadurapperuma/uxor/internal/config"
+	"github.com/gayanmadurapperuma/uxor/internal/parse"
+	"github.com/gayanmadurapperuma/uxor/internal/store"
 )
 
 func writeFile(t *testing.T, root, rel, content string) {
@@ -24,7 +25,7 @@ func writeFile(t *testing.T, root, rel, content string) {
 	}
 }
 
-// newProject creates a project with a .codegraph.yaml marker.
+// newProject creates a project with a .uxor.yaml marker.
 func newProject(t *testing.T, files map[string]string) *config.Project {
 	t.Helper()
 	root, _ := filepath.EvalSymlinks(t.TempDir())
@@ -261,5 +262,80 @@ func TestForget(t *testing.T) {
 	run(t, p, st, Options{})
 	if got := paths(t, st); !slices.Equal(got, []string{"app/main.go", "secrets/keys.go"}) {
 		t.Fatalf("after unforget: %v", got)
+	}
+}
+
+func TestProgress(t *testing.T) {
+	p := newProject(t, map[string]string{
+		"a.go": "package a\n\nfunc A() { B() }\n",
+		"b.go": "package a\n\nfunc B() {}\n",
+		"c.py": "def c():\n    pass\n",
+	})
+	st := openStore(t, p)
+	var events []Event
+	run(t, p, st, Options{Progress: func(ev Event) { events = append(events, ev) }})
+
+	var stages []string
+	parsed := 0
+	for _, ev := range events {
+		if len(stages) == 0 || stages[len(stages)-1] != ev.Stage {
+			stages = append(stages, ev.Stage)
+		}
+		if ev.Stage == "parsing" {
+			if ev.Total != 3 || ev.Done > ev.Total {
+				t.Errorf("parsing event %+v", ev)
+			}
+			parsed = ev.Done
+		}
+	}
+	if !slices.Equal(stages, []string{"scanning", "parsing", "resolving", "done"}) {
+		t.Errorf("stages %v", stages)
+	}
+	if parsed != 3 {
+		t.Errorf("last parsing event Done=%d, want 3", parsed)
+	}
+
+	// Nothing changed: parsing reports zero of zero, and nothing breaks.
+	events = nil
+	run(t, p, st, Options{Progress: func(ev Event) { events = append(events, ev) }})
+	if len(events) == 0 || events[len(events)-1].Stage != "done" {
+		t.Errorf("unchanged run events %+v", events)
+	}
+}
+
+// TestParserVersionReparses: files indexed by older extraction rules are
+// re-parsed by the next whole-project run, even though they look unchanged;
+// path-scoped runs never do it (D34).
+func TestParserVersionReparses(t *testing.T) {
+	p := newProject(t, map[string]string{
+		"a.go": "package a\n\nfunc A() {}\n",
+		"b.go": "package a\n\nfunc B() {}\n",
+	})
+	st := openStore(t, p)
+	ctx := context.Background()
+	if res := run(t, p, st, Options{}); res.Parsed != 2 || res.Reparsed {
+		t.Fatalf("first run: %+v", res)
+	}
+	if v, _ := st.Meta(ctx, "parser_version"); v != parse.Version {
+		t.Fatalf("parser_version %q, want %q", v, parse.Version)
+	}
+	if res := run(t, p, st, Options{}); res.Parsed != 0 || res.Reparsed {
+		t.Fatalf("unchanged run re-parsed: %+v", res)
+	}
+
+	if err := st.SetMeta(ctx, "parser_version", "old"); err != nil {
+		t.Fatal(err)
+	}
+	if res := run(t, p, st, Options{Paths: []string{"a.go"}}); res.Reparsed {
+		t.Error("a path-scoped run re-parsed everything")
+	}
+	if res := run(t, p, st, Options{}); res.Parsed != 2 || !res.Reparsed {
+		t.Errorf("old rules: want every file re-parsed, got %+v", res)
+	}
+	if v, _ := st.Meta(ctx, "parser_version"); v != parse.Version {
+		t.Errorf("parser_version %q after re-parse", v)
+	}
+	if got := paths(t, st); !slices.Equal(got, []string{"a.go", "b.go"}) {
+		t.Errorf("files after re-parse: %v", got)
 	}
 }

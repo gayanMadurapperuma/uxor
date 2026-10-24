@@ -4,7 +4,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/mcpserver"
+	"github.com/gayanmadurapperuma/uxor/internal/mcpserver"
 )
 
 // version is set at release time with -ldflags "-X main.version=…".

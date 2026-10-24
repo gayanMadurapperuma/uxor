@@ -1,12 +1,12 @@
 {
   "mcpServers": {
-    "codegraph": {
+    "uxor": {
       "args": [
         "--root",
         "${CLAUDE_PROJECT_DIR:-.}",
         "serve"
       ],
-      "command": "codegraph",
+      "command": "uxor",
       "type": "stdio"
     }
   }

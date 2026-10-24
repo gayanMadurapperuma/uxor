@@ -6,7 +6,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/parse"
+	"github.com/gayanmadurapperuma/uxor/internal/parse"
 )
 
 // ErrNotIndexed is returned for a path the index has no file for.

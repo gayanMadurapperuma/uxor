@@ -46,3 +46,17 @@ func (r *memRepo) GetUserByID(id int) (*User, error) {
 func normalize(name string) string {
 	return str.ToLower(str.TrimSpace(name))
 }
+
+// ValidNames keeps the names that normalize to something.
+func ValidNames(names []string) []string {
+	keep := func(n string) bool {
+		return normalize(n) != ""
+	}
+	var out []string
+	for _, n := range names {
+		if keep(n) {
+			out = append(out, n)
+		}
+	}
+	return out
+}

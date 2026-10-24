@@ -1,4 +1,4 @@
-// Package config loads .codegraph.yaml and resolves the project a command
+// Package config loads .uxor.yaml and resolves the project a command
 // operates on. Every project is isolated: its root, data directory and
 // database are derived from one resolved root and nothing else.
 package config
@@ -16,7 +16,11 @@ import (
 )
 
 // FileName is the optional per-project config file at the project root.
-const FileName = ".codegraph.yaml"
+const FileName = ".uxor.yaml"
+
+// LegacyFileName is the config file before the rename to uxor (D36). It is
+// still read until MigrateLegacy renames it.
+const LegacyFileName = ".codegraph.yaml"
 
 type Budgets struct {
 	QueryTokens   int `yaml:"query_tokens"`
@@ -49,12 +53,16 @@ type Config struct {
 	Budgets       Budgets       `yaml:"budgets"`
 	Retrieve      Retrieve      `yaml:"retrieve"`
 	Resolve       ResolveConfig `yaml:"resolve"`
+	// HookLog appends one JSON line per hook run to .uxor/hook.log
+	// (prompt excerpt, files returned, time). Off by default: it stores
+	// prompt text, locally only (D33).
+	HookLog bool `yaml:"hook_log"`
 }
 
 // DefaultExcludes are always applied, before user excludes.
 var DefaultExcludes = []string{
 	"**/.git/**", "**/node_modules/**", "**/vendor/**", "**/dist/**", "**/build/**",
-	"**/.venv/**", "**/venv/**", "**/__pycache__/**", "**/.codegraph/**", "**/.next/**",
+	"**/.venv/**", "**/venv/**", "**/__pycache__/**", "**/.uxor/**", "**/.codegraph/**", "**/.next/**",
 	"**/.tox/**", "**/.mypy_cache/**", "**/coverage/**",
 	"**/*.min.js", "**/*.bundle.js", "**/*.pb.go", "**/*_pb2.py", "**/*_pb2_grpc.py",
 	"**/*.generated.*", "**/*.gen.go",
@@ -73,11 +81,16 @@ func Default() *Config {
 	}
 }
 
-// Load reads <root>/.codegraph.yaml over the defaults. A missing file is not
+// Load reads <root>/.uxor.yaml over the defaults. A missing file is not
 // an error.
 func Load(root string) (*Config, error) {
 	c := Default()
-	b, err := os.ReadFile(filepath.Join(root, FileName))
+	name := FileName
+	b, err := os.ReadFile(filepath.Join(root, name))
+	if errors.Is(err, os.ErrNotExist) {
+		name = LegacyFileName
+		b, err = os.ReadFile(filepath.Join(root, name))
+	}
 	if errors.Is(err, os.ErrNotExist) {
 		return c, nil
 	}
@@ -85,7 +98,7 @@ func Load(root string) (*Config, error) {
 		return nil, err
 	}
 	if err := yaml.Unmarshal(b, c); err != nil {
-		return nil, fmt.Errorf("%s: %w", FileName, err)
+		return nil, fmt.Errorf("%s: %w", name, err)
 	}
 	return c, c.validate()
 }

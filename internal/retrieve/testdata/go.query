@@ -1,10 +1,11 @@
-## get user by id  (94 tokens)
+## get user by id  (106 tokens)
 store/user.go:24-24  method GetUserByID(id int) (*User, error)  # match
 store/user.go:27-27  type userID = int  # match
+store/user.go:34-36  func NewMemRepo() *memRepo  # match
 store/user.go:38-44  func (r *memRepo) GetUserByID(id int) (*User, error)  # match
+store/user_test.go:5-10  test func TestGetUserByID(t *testing.T)  # match
 api/handler.go:19-25  func (h *Handler) Show(id int) string  # match
 api/handler.go:32-35  func Render(repo store.Repository, id int) string  # match
-store/user_test.go:5-10  test func TestGetUserByID(t *testing.T)  # match
 
 ## Render  (34 tokens)
 api/handler.go:32-35  func Render(repo store.Repository, id int) string  # match: exact name

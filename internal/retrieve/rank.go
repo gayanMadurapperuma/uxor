@@ -8,21 +8,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/parse"
+	"github.com/gayanmadurapperuma/uxor/internal/parse"
 )
 
-const (
-	// Relevance is multiplied by 1 + pagerankWeight·ln(1+pagerank), so rank
-	// orders relevant symbols but cannot lift an unrelated hub; pagerank has
-	// mean 1 (D15).
-	pagerankWeight = 0.1
-	testedBonus    = 0.05 // a symbol some test covers
-	testPenalty    = 0.5  // × for test code unless the query mentions tests
-	testBoost      = 1.5  // × for test code when it does
-	// maxCandidates bounds the detail lookup; nodes are pre-cut by
-	// seed + expansion score, which dominates the final score.
-	maxCandidates = 200
-)
+// maxCandidates bounds the detail lookup; nodes are pre-cut by seed +
+// expansion score, which dominates the final score. The scoring constants
+// are in Tuning.
+const maxCandidates = 200
 
 // candidate is a ranked symbol with what packing and output need.
 type candidate struct {
@@ -41,7 +33,7 @@ type candidate struct {
 
 // rank scores the expanded nodes and returns listable candidates (module
 // symbols excluded), best first.
-func rank(ctx context.Context, db *sql.DB, nodes map[int64]*node, q Query) ([]candidate, error) {
+func rank(ctx context.Context, db *sql.DB, nodes map[int64]*node, q Query, t *Tuning) ([]candidate, error) {
 	ids := make([]int64, 0, len(nodes))
 	for id := range nodes {
 		ids = append(ids, id)
@@ -111,10 +103,10 @@ func rank(ctx context.Context, db *sql.DB, nodes map[int64]*node, q Query) ([]ca
 		n := nodes[id]
 		c := d.candidate
 		// Seed scores were already adjusted before expansion.
-		exp := n.exp * testFactor(q, isTest(c.Kind, c.Path))
-		c.Score = (n.seed + exp) * (1 + pagerankWeight*math.Log1p(max(d.pagerank, 0)))
+		exp := n.exp * testFactor(q, isTest(c.Kind, c.Path), t)
+		c.Score = (n.seed + exp) * (1 + t.PagerankWeight*math.Log1p(max(d.pagerank, 0)))
 		if d.tested {
-			c.Score += testedBonus
+			c.Score += t.TestedBonus
 		}
 		switch {
 		case n.seed > 0:
@@ -161,21 +153,21 @@ func isTest(kind parse.Kind, p string) bool {
 
 // testFactor scales test code: down normally, up when the query is
 // about tests.
-func testFactor(q Query, test bool) float64 {
+func testFactor(q Query, test bool, t *Tuning) float64 {
 	switch {
 	case !test:
 		return 1
 	case q.WantsTests:
-		return testBoost
+		return t.TestBoost
 	default:
-		return testPenalty
+		return t.TestPenalty
 	}
 }
 
 // adjustTestSeeds applies testFactor to seeds before expansion, so a test
 // matching the query does not pass its full score to every helper it
 // calls (and does when tests are what the query wants).
-func adjustTestSeeds(ctx context.Context, db *sql.DB, seeds []Seed, q Query) error {
+func adjustTestSeeds(ctx context.Context, db *sql.DB, seeds []Seed, q Query, t *Tuning) error {
 	if len(seeds) == 0 {
 		return nil
 	}
@@ -204,7 +196,7 @@ func adjustTestSeeds(ctx context.Context, db *sql.DB, seeds []Seed, q Query) err
 		return err
 	}
 	for i := range seeds {
-		seeds[i].Score *= testFactor(q, test[seeds[i].ID])
+		seeds[i].Score *= testFactor(q, test[seeds[i].ID], t)
 	}
 	return nil
 }

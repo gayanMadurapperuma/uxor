@@ -13,19 +13,27 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/config"
-	"github.com/gayanmadurapperuma/codegraph/internal/parse"
-	"github.com/gayanmadurapperuma/codegraph/internal/resolve"
-	"github.com/gayanmadurapperuma/codegraph/internal/store"
+	"github.com/gayanmadurapperuma/uxor/internal/config"
+	"github.com/gayanmadurapperuma/uxor/internal/parse"
+	"github.com/gayanmadurapperuma/uxor/internal/resolve"
+	"github.com/gayanmadurapperuma/uxor/internal/store"
 )
 
 // BatchSize is the number of file operations per write transaction.
 const BatchSize = 500
 
 type Options struct {
-	Full    bool     // drop everything and re-index
-	Workers int      // parse workers; default GOMAXPROCS
-	Paths   []string // restrict to these paths (absolute or root-relative); no removal scan
+	Full     bool        // drop everything and re-index
+	Workers  int         // parse workers; default GOMAXPROCS
+	Paths    []string    // restrict to these paths (absolute or root-relative); no removal scan
+	Progress func(Event) // called on the calling goroutine as work advances; nil = silent
+}
+
+// Event reports progress: Stage is "scanning", "parsing" (Done of Total
+// files handled), "resolving" or "done".
+type Event struct {
+	Stage       string
+	Done, Total int
 }
 
 type Result struct {
@@ -38,6 +46,7 @@ type Result struct {
 	Errors    []string
 	Elapsed   time.Duration
 	Resolve   *resolve.Result
+	Reparsed  bool // every file was re-parsed because the extraction rules changed
 }
 
 func (r *Result) Changed() bool { return r.Parsed+r.Removed > 0 }
@@ -74,6 +83,31 @@ func Run(ctx context.Context, p *config.Project, st *store.Store, opt Options) (
 		return nil, err
 	}
 	m := NewMatcher(p.Config, forget)
+	report := func(ev Event) {
+		if opt.Progress != nil {
+			opt.Progress(ev)
+		}
+	}
+	report(Event{Stage: "scanning"})
+
+	// Files indexed by older extraction rules look unchanged by size and
+	// mtime, so a whole-project run re-parses everything once (D34).
+	// Path-scoped runs (the edit hook, under a deadline) never do this.
+	whole := len(opt.Paths) == 0
+	if whole && !opt.Full {
+		v, err := st.Meta(ctx, "parser_version")
+		if err != nil {
+			return nil, err
+		}
+		if v != parse.Version {
+			if n, err := st.FileCount(ctx); err != nil {
+				return nil, err
+			} else if n > 0 {
+				opt.Full = true
+				res.Reparsed = true
+			}
+		}
+	}
 
 	if opt.Full {
 		if err := st.Reset(ctx); err != nil {
@@ -134,7 +168,8 @@ func Run(ctx context.Context, p *config.Project, st *store.Store, opt Options) (
 	// first runs) skip the tracking overhead and resolve everything.
 	changes := len(jobs) + len(removed)
 	track := !opt.Full && len(states) > 0 && float64(changes) <= resolve.FullFraction*float64(len(states))
-	w := &writer{st: st, res: res, track: track}
+	w := &writer{st: st, res: res, track: track, report: report, total: len(jobs)}
+	report(Event{Stage: "parsing", Total: len(jobs)})
 	if err := parseAll(ctx, p, jobs, opt.Workers, w.handle); err != nil {
 		w.abort()
 		return nil, err
@@ -150,6 +185,7 @@ func Run(ctx context.Context, p *config.Project, st *store.Store, opt Options) (
 		return nil, err
 	}
 
+	report(Event{Stage: "resolving"})
 	if res.Resolve, err = resolve.Run(ctx, p, st, resolve.Options{
 		Full:     !track && (res.Changed() || opt.Full || len(states) == 0),
 		PageRank: len(opt.Paths) == 0,
@@ -163,12 +199,18 @@ func Run(ctx context.Context, p *config.Project, st *store.Store, opt Options) (
 			return nil, err
 		}
 	}
+	if whole {
+		if err := st.SetMeta(ctx, "parser_version", parse.Version); err != nil {
+			return nil, err
+		}
+	}
 	if res.Changed() || opt.Full || res.Resolve.Files > 0 {
 		if err := st.Optimize(ctx); err != nil {
 			return nil, err
 		}
 	}
 	res.Elapsed = time.Since(start)
+	report(Event{Stage: "done"})
 	return res, nil
 }
 
@@ -272,6 +314,9 @@ type writer struct {
 	track bool // record dirty files for an incremental resolve
 	batch *store.Batch
 	n     int
+	// report, if set, hears one "parsing" event per handled file.
+	report      func(Event)
+	done, total int
 }
 
 func (w *writer) op(ctx context.Context, fn func(*store.Batch) error) error {
@@ -308,6 +353,10 @@ func (w *writer) abort() {
 }
 
 func (w *writer) handle(ctx context.Context, r result) error {
+	if w.report != nil {
+		w.done++
+		w.report(Event{Stage: "parsing", Done: w.done, Total: w.total})
+	}
 	e := r.job.entry
 	switch r.kind {
 	case outParsed:

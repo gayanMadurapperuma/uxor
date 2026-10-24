@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/retrieve"
-	"github.com/gayanmadurapperuma/codegraph/internal/store"
+	"github.com/gayanmadurapperuma/uxor/internal/retrieve"
+	"github.com/gayanmadurapperuma/uxor/internal/store"
 )
 
 func newQueryCmd() *cobra.Command {
@@ -27,7 +27,7 @@ func newQueryCmd() *cobra.Command {
 				return err
 			}
 			if p.Disabled() {
-				fmt.Fprintln(cmd.ErrOrStderr(), "note: codegraph is disabled for this project; hooks and MCP tools return nothing (`codegraph enable` to resume)")
+				fmt.Fprintln(cmd.ErrOrStderr(), "note: uxor is disabled for this project; hooks and MCP tools return nothing (`uxor enable` to resume)")
 			}
 			st, err := store.Open(cmd.Context(), p.DBPath, store.Options{ReadOnly: true})
 			if err != nil {

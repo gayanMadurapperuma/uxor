@@ -14,3 +14,5 @@ store.TestGetUserByID -CALLS-> store.memRepo.GetUserByID (store/user.go) 0.25
 store.TestGetUserByID -TESTS-> store.NewMemRepo (store/user.go) 1.00
 store.TestGetUserByID -TESTS-> store.Repository.GetUserByID (store/user.go) 0.25
 store.TestGetUserByID -TESTS-> store.memRepo.GetUserByID (store/user.go) 0.25
+store.ValidNames -CALLS-> store.ValidNames.keep (store/user.go) 1.00
+store.ValidNames.keep -CALLS-> store.normalize (store/user.go) 1.00

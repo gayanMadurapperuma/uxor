@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/parse"
-	"github.com/gayanmadurapperuma/codegraph/internal/store"
-	"github.com/gayanmadurapperuma/codegraph/internal/testfix"
+	"github.com/gayanmadurapperuma/uxor/internal/parse"
+	"github.com/gayanmadurapperuma/uxor/internal/store"
+	"github.com/gayanmadurapperuma/uxor/internal/testfix"
 )
 
 func TestGraphQueries(t *testing.T) {

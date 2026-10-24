@@ -1,3 +1,7 @@
+AuthProvider -CALLS-> AuthProvider.handleSignIn (src/App.tsx) 1.00
+AuthProvider.handleSignIn -CALLS-> UserLookup.getUserById (src/services/userService.ts) 0.25
+AuthProvider.handleSignIn -CALLS-> UserService.getUserById (src/services/userService.ts) 0.25
+AuthProvider.handleSignIn -CALLS-> formatUser (src/services/userService.ts) 1.00
 Config.load -CALLS-> Config (src/services/config.ts) 1.00
 UserService -EXTENDS-> BaseService (src/base.ts) 1.00
 UserService -IMPLEMENTS-> UserLookup (src/services/userService.ts) 1.00

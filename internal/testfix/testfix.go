@@ -10,9 +10,9 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/config"
-	"github.com/gayanmadurapperuma/codegraph/internal/index"
-	"github.com/gayanmadurapperuma/codegraph/internal/store"
+	"github.com/gayanmadurapperuma/uxor/internal/config"
+	"github.com/gayanmadurapperuma/uxor/internal/index"
+	"github.com/gayanmadurapperuma/uxor/internal/store"
 )
 
 // Dir returns testdata/fixtures/<name> in this repository.
@@ -22,7 +22,7 @@ func Dir(name string) string {
 }
 
 // Copy copies a fixture into a fresh project directory (with a
-// .codegraph.yaml marker) and returns its root, symlinks resolved.
+// .uxor.yaml marker) and returns its root, symlinks resolved.
 func Copy(t testing.TB, name string) string {
 	t.Helper()
 	src := Dir(name)

@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/hook"
+	"github.com/gayanmadurapperuma/uxor/internal/hook"
 )
 
 func newHookCmd() *cobra.Command {
@@ -38,7 +38,7 @@ func newHookCmd() *cobra.Command {
 	return cmd
 }
 
-// debug reports a hook outcome on stderr, only with CODEGRAPH_DEBUG set:
+// debug reports a hook outcome on stderr, only with UXOR_DEBUG set:
 // hooks never fail and never print anything else.
 func debug(cmd *cobra.Command, err error) {
 	if err != nil {
@@ -47,7 +47,7 @@ func debug(cmd *cobra.Command, err error) {
 }
 
 func debugf(cmd *cobra.Command, format string, args ...any) {
-	if os.Getenv("CODEGRAPH_DEBUG") != "" {
-		fmt.Fprintf(cmd.ErrOrStderr(), "codegraph hook: "+format+"\n", args...)
+	if os.Getenv("UXOR_DEBUG") != "" {
+		fmt.Fprintf(cmd.ErrOrStderr(), "uxor hook: "+format+"\n", args...)
 	}
 }

@@ -8,9 +8,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/config"
-	"github.com/gayanmadurapperuma/codegraph/internal/mcpserver"
-	"github.com/gayanmadurapperuma/codegraph/internal/testfix"
+	"github.com/gayanmadurapperuma/uxor/internal/config"
+	"github.com/gayanmadurapperuma/uxor/internal/mcpserver"
+	"github.com/gayanmadurapperuma/uxor/internal/testfix"
 )
 
 // connect serves p over in-memory transports and returns a client session.
@@ -115,8 +115,9 @@ func TestTools(t *testing.T) {
 	if got.data["budget"] != 50.0 || got.data["results"] == nil || got.data["timings_ms"] == nil {
 		t.Errorf("structured find_relevant: %v", got.data)
 	}
+	// The it() block and App.tsx's handleSignIn (both 0.25 guesses).
 	got = callTool(t, cs, "callers_of", map[string]any{"symbol": "UserService.getUserById"})
-	if got.data["total"] != 1.0 {
+	if got.data["total"] != 2.0 {
 		t.Errorf("structured callers_of: %v", got.data)
 	}
 }
@@ -129,9 +130,9 @@ func TestDisabledAndMissingIndex(t *testing.T) {
 	}
 	cs := connect(t, p)
 
-	// No index yet: a tool error that points at `codegraph index`.
+	// No index yet: a tool error that points at `uxor index`.
 	got := callTool(t, cs, "get_symbol", map[string]any{"name": "Render"})
-	if !got.isError || !strings.Contains(got.text, "codegraph index") {
+	if !got.isError || !strings.Contains(got.text, "uxor index") {
 		t.Errorf("missing index: %+v", got)
 	}
 	// Indexed while the server runs: the next call opens it.

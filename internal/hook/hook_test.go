@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/config"
-	"github.com/gayanmadurapperuma/codegraph/internal/hook"
-	"github.com/gayanmadurapperuma/codegraph/internal/testfix"
+	"github.com/gayanmadurapperuma/uxor/internal/config"
+	"github.com/gayanmadurapperuma/uxor/internal/hook"
+	"github.com/gayanmadurapperuma/uxor/internal/testfix"
 )
 
 func payload(fields map[string]any) string {
@@ -160,5 +160,57 @@ func TestPromptNoIndex(t *testing.T) {
 	out, err := prompt(t, context.Background(), payload(map[string]any{"cwd": root, "prompt": "render"}))
 	if out != "" || !hook.Skipped(err) {
 		t.Errorf("no index: %q %v", out, err)
+	}
+}
+
+func TestHookLog(t *testing.T) {
+	p := testfix.Indexed(t, "ts")
+	ctx := context.Background()
+	logPath := filepath.Join(p.DataDir, hook.LogFile)
+
+	// Off by default: nothing is written.
+	prompt(t, ctx, payload(map[string]any{"cwd": p.Root, "prompt": "get user by id"}))
+	if _, err := os.Stat(logPath); err == nil {
+		t.Fatal("hook.log written while hook_log is off")
+	}
+
+	os.WriteFile(filepath.Join(p.Root, config.FileName), []byte("hook_log: true\n"), 0o644)
+	long := "get user by id " + strings.Repeat("x", 400)
+	prompt(t, ctx, payload(map[string]any{"cwd": p.Root, "prompt": long}))
+	prompt(t, ctx, payload(map[string]any{"cwd": p.Root, "prompt": "zzzqqq"}))
+	file := filepath.Join(p.Root, "src", "repo.ts")
+	hook.Edited(ctx, strings.NewReader(payload(map[string]any{"cwd": p.Root, "tool_name": "Edit",
+		"tool_input": map[string]any{"file_path": file}})))
+
+	b, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		var e map[string]any
+		if err := json.Unmarshal([]byte(line), &e); err != nil {
+			t.Fatalf("bad line %q: %v", line, err)
+		}
+		entries = append(entries, e)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("%d entries, want 3:\n%s", len(entries), b)
+	}
+	inj, miss, ed := entries[0], entries[1], entries[2]
+	if inj["event"] != "prompt" || inj["result"] != "injected" || inj["files"] == nil || inj["tokens"] == nil {
+		t.Errorf("injected entry %v", inj)
+	}
+	if got := []rune(inj["prompt"].(string)); len(got) > 301 {
+		t.Errorf("prompt excerpt not capped: %d chars", len(got))
+	}
+	if miss["result"] != "skipped: no matches" || miss["files"] != nil {
+		t.Errorf("miss entry %v", miss)
+	}
+	if ed["event"] != "edited" || ed["result"] != "indexed" || ed["files"].([]any)[0] != "src/repo.ts" {
+		t.Errorf("edited entry %v", ed)
+	}
+	if fi, _ := os.Stat(logPath); fi.Mode().Perm() != 0o600 {
+		t.Errorf("hook.log mode %v, want 0600", fi.Mode().Perm())
 	}
 }

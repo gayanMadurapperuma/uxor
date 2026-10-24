@@ -6,7 +6,7 @@ import (
 	"path"
 	"regexp"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/parse"
+	"github.com/gayanmadurapperuma/uxor/internal/parse"
 )
 
 // querier is satisfied by *sql.Tx; all resolver I/O runs inside one

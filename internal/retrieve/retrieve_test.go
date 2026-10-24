@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/config"
-	"github.com/gayanmadurapperuma/codegraph/internal/index"
-	"github.com/gayanmadurapperuma/codegraph/internal/retrieve"
-	"github.com/gayanmadurapperuma/codegraph/internal/store"
+	"github.com/gayanmadurapperuma/uxor/internal/config"
+	"github.com/gayanmadurapperuma/uxor/internal/index"
+	"github.com/gayanmadurapperuma/uxor/internal/retrieve"
+	"github.com/gayanmadurapperuma/uxor/internal/store"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")
@@ -202,12 +202,12 @@ func TestFindRelevantLimits(t *testing.T) {
 }
 
 // BenchmarkFindRelevant runs on the ts fixture, or on an indexed project
-// given by CODEGRAPH_BENCH_ROOT (e.g. a django checkout).
+// given by UXOR_BENCH_ROOT (e.g. a django checkout).
 func BenchmarkFindRelevant(b *testing.B) {
 	var p *config.Project
 	var st *store.Store
 	queries := []string{"get user by id", "formatUser", "load config"}
-	if root := os.Getenv("CODEGRAPH_BENCH_ROOT"); root != "" {
+	if root := os.Getenv("UXOR_BENCH_ROOT"); root != "" {
 		var err error
 		if p, err = config.Open(root); err != nil {
 			b.Fatal(err)
@@ -224,5 +224,43 @@ func BenchmarkFindRelevant(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; b.Loop(); i++ {
 		find(b, p, st, queries[i%len(queries)], retrieve.Options{})
+	}
+}
+
+// TestPrefixStaysInsideWords: a prefix query matches identifier words, not
+// the whole-identifier token, so "handled" must not find handleDismiss
+// ("handledismiss" starts with "handled"), while its words and its exact
+// name still do (D31).
+func TestPrefixStaysInsideWords(t *testing.T) {
+	p, st := fixture(t, "ts")
+	if res := find(t, p, st, "handled", retrieve.Options{}); len(res.Files) != 0 {
+		t.Errorf("\"handled\" matched across a word boundary:\n%s", res.Text)
+	}
+	for _, q := range []string{"dismiss", "handleDismiss", "handle dismiss"} {
+		res := find(t, p, st, q, retrieve.Options{})
+		if !strings.Contains(res.Text, "src/App.tsx:21-23") {
+			t.Errorf("%q: handleDismiss not found:\n%s", q, res.Text)
+		}
+	}
+}
+
+// TestLoginFindsSignIn is the first real-project miss: "login" in the prompt,
+// signIn in the code (D32).
+func TestLoginFindsSignIn(t *testing.T) {
+	p, st := fixture(t, "ts")
+	for _, q := range []string{"where is the login function", "where sign-in is handled"} {
+		// Lines are grouped by file in line order, so check the best score.
+		res := find(t, p, st, q, retrieve.Options{})
+		var best retrieve.Symbol
+		for _, f := range res.Files {
+			for _, sym := range f.Symbols {
+				if sym.Score > best.Score {
+					best = sym
+				}
+			}
+		}
+		if best.Name != "handleSignIn" {
+			t.Errorf("%q: best is %s, want handleSignIn:\n%s", q, best.Name, res.Text)
+		}
 	}
 }

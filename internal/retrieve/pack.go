@@ -9,18 +9,6 @@ import (
 // charsPerToken is the token estimate used for budgets.
 const charsPerToken = 4
 
-// A file scores its best symbol plus restWeight × its next restCount
-// symbols, so several hits lift a file but many weak ones cannot outrank
-// one strong one.
-const (
-	restWeight = 0.25
-	restCount  = 3
-)
-
-// minRelScore drops candidates scoring below this fraction of the best:
-// the budget is a ceiling, not a target, and weak tails only cost tokens.
-const minRelScore = 0.25
-
 // File is one result file and its chosen symbols in line order.
 type File struct {
 	Path    string   `json:"path"`
@@ -55,9 +43,10 @@ func symbol(c *candidate, depth int) Symbol {
 
 // pack chooses candidates in score order while the rendered text stays
 // within budget tokens and at most maxFiles files (0 = no limit), down to
-// minRelScore of the best, then groups them by file. The best candidate is always included. Lines that
-// do not fit are skipped so a shorter, lower-ranked one can still be used.
-func pack(cands []candidate, budget, maxFiles int) ([]File, string) {
+// t.MinRelScore of the best, then groups them by file. The best candidate is
+// always included. Lines that do not fit are skipped so a shorter,
+// lower-ranked one can still be used.
+func pack(cands []candidate, budget, maxFiles int, t *Tuning) ([]File, string) {
 	limit := budget * charsPerToken
 	chosen := map[int64]*candidate{}
 	files := map[string]bool{}
@@ -84,7 +73,7 @@ func pack(cands []candidate, budget, maxFiles int) ([]File, string) {
 	}
 	for i := range cands {
 		c := &cands[i]
-		if c.Score < minRelScore*cands[0].Score {
+		if c.Score < t.MinRelScore*cands[0].Score {
 			break // cands are sorted by score
 		}
 		if !files[c.Path] && maxFiles > 0 && len(files) >= maxFiles {
@@ -105,11 +94,7 @@ func pack(cands []candidate, budget, maxFiles int) ([]File, string) {
 	}
 	out := make([]File, 0, len(byFile))
 	for path, cs := range byFile {
-		sort.Slice(cs, func(i, j int) bool { return cs[i].Score > cs[j].Score })
-		f := File{Path: path, Score: cs[0].Score}
-		for _, c := range cs[1:min(len(cs), 1+restCount)] {
-			f.Score += restWeight * c.Score
-		}
+		f := File{Path: path, Score: fileScore(cs, t)}
 		sort.Slice(cs, func(i, j int) bool {
 			if cs[i].StartLine != cs[j].StartLine {
 				return cs[i].StartLine < cs[j].StartLine
@@ -122,15 +107,9 @@ func pack(cands []candidate, budget, maxFiles int) ([]File, string) {
 		for _, c := range cs {
 			f.Symbols = append(f.Symbols, symbol(c, depth(c)))
 		}
-		f.Score = round(f.Score)
 		out = append(out, f)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Score != out[j].Score {
-			return out[i].Score > out[j].Score
-		}
-		return out[i].Path < out[j].Path
-	})
+	sortFiles(out)
 
 	var b strings.Builder
 	for _, f := range out {
@@ -140,6 +119,28 @@ func pack(cands []candidate, budget, maxFiles int) ([]File, string) {
 		}
 	}
 	return out, b.String()
+}
+
+// fileScore is a file's best symbol score plus t.RestWeight × its next
+// t.RestCount, so several hits lift a file but many weak ones cannot
+// outrank one strong one. It sorts cs by score.
+func fileScore(cs []*candidate, t *Tuning) float64 {
+	sort.Slice(cs, func(i, j int) bool { return cs[i].Score > cs[j].Score })
+	s := cs[0].Score
+	for _, c := range cs[1:min(len(cs), 1+t.RestCount)] {
+		s += t.RestWeight * c.Score
+	}
+	return round(s)
+}
+
+// sortFiles orders files best first, ties by path.
+func sortFiles(fs []File) {
+	sort.Slice(fs, func(i, j int) bool {
+		if fs[i].Score != fs[j].Score {
+			return fs[i].Score > fs[j].Score
+		}
+		return fs[i].Path < fs[j].Path
+	})
 }
 
 // Render formats one packed line, "path:start-end  kind signature",

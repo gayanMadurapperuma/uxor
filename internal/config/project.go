@@ -12,8 +12,11 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 )
 
+// LegacyDataDirName is the data directory before the rename to uxor (D36).
+const LegacyDataDirName = ".codegraph"
+
 const (
-	DataDirName  = ".codegraph"
+	DataDirName  = ".uxor"
 	dbFileName   = "index.db"
 	disabledFile = "disabled"
 	forgetFile   = "forget.txt"
@@ -22,10 +25,10 @@ const (
 // ErrOutsideRoot is returned when a path escapes the project root.
 var ErrOutsideRoot = errors.New("path is outside the project root")
 
-// Project is one isolated codegraph project.
+// Project is one isolated uxor project.
 type Project struct {
 	Root    string // absolute, symlinks resolved
-	DataDir string // <root>/.codegraph
+	DataDir string // <root>/.uxor
 	DBPath  string
 	Config  *Config
 }
@@ -54,7 +57,7 @@ func Open(start string) (*Project, error) {
 }
 
 // FindRoot walks up from start to the nearest directory containing
-// .codegraph.yaml or .git. If none is found, start itself is the root.
+// .uxor.yaml or .git. If none is found, start itself is the root.
 func FindRoot(start string) (string, error) {
 	abs, err := filepath.Abs(start)
 	if err != nil {
@@ -80,7 +83,7 @@ func FindRoot(start string) (string, error) {
 
 // IsProjectMarker reports whether dir is a project root on its own.
 func IsProjectMarker(dir string) bool {
-	for _, m := range []string{FileName, ".git"} {
+	for _, m := range []string{FileName, LegacyFileName, ".git"} {
 		if _, err := os.Lstat(filepath.Join(dir, m)); err == nil {
 			return true
 		}
@@ -160,7 +163,7 @@ func (p *Project) SetDisabled(disabled bool) error {
 	if err := p.EnsureDataDir(); err != nil {
 		return err
 	}
-	return os.WriteFile(marker, []byte("codegraph context injection is disabled for this project\n"), 0o600)
+	return os.WriteFile(marker, []byte("uxor context injection is disabled for this project\n"), 0o600)
 }
 
 // ForgetGlobs returns the local forget list (one glob per line).
@@ -195,7 +198,7 @@ func (p *Project) SetForgetGlobs(globs []string) error {
 	}
 	globs = dedupSorted(globs)
 	var b strings.Builder
-	b.WriteString("# Local codegraph excludes (not committed). Managed by `codegraph forget`.\n")
+	b.WriteString("# Local uxor excludes (not committed). Managed by `uxor forget`.\n")
 	for _, g := range globs {
 		b.WriteString(g)
 		b.WriteByte('\n')
@@ -223,7 +226,7 @@ func (p *Project) Clean() error {
 	return os.RemoveAll(p.DataDir)
 }
 
-// EnsureGitignore appends .codegraph/ to <root>/.gitignore in git repos when
+// EnsureGitignore appends .uxor/ to <root>/.gitignore in git repos when
 // no rule for it exists yet. It reports whether the file was changed.
 func (p *Project) EnsureGitignore() (bool, error) {
 	if _, err := os.Stat(filepath.Join(p.Root, ".git")); err != nil {
@@ -236,11 +239,11 @@ func (p *Project) EnsureGitignore() (bool, error) {
 	}
 	for line := range strings.SplitSeq(string(b), "\n") {
 		switch strings.TrimSpace(line) {
-		case ".codegraph", ".codegraph/", "/.codegraph", "/.codegraph/":
+		case ".uxor", ".uxor/", "/.uxor", "/.uxor/":
 			return false, nil
 		}
 	}
-	add := ".codegraph/\n"
+	add := ".uxor/\n"
 	if len(b) > 0 && !strings.HasSuffix(string(b), "\n") {
 		add = "\n" + add
 	}
@@ -251,4 +254,50 @@ func (p *Project) EnsureGitignore() (bool, error) {
 	defer f.Close()
 	_, err = f.WriteString(add)
 	return err == nil, err
+}
+
+// MigrateLegacy moves a project set up before the rename to uxor (D36):
+// .codegraph/ → .uxor/, .codegraph.yaml → .uxor.yaml, and the .gitignore
+// entry. Nothing is overwritten: a target that already exists is left as
+// it is. With dry set it only reports. It returns one note per change.
+func MigrateLegacy(root string, dry bool) ([]string, error) {
+	var notes []string
+	for _, mv := range [][2]string{{LegacyDataDirName, DataDirName}, {LegacyFileName, FileName}} {
+		from, to := filepath.Join(root, mv[0]), filepath.Join(root, mv[1])
+		if _, err := os.Lstat(from); err != nil {
+			continue
+		}
+		if _, err := os.Lstat(to); err == nil {
+			continue // already migrated (or both exist): don't overwrite
+		}
+		if !dry {
+			if err := os.Rename(from, to); err != nil {
+				return notes, err
+			}
+		}
+		notes = append(notes, mv[0]+" → "+mv[1])
+	}
+	gi := filepath.Join(root, ".gitignore")
+	b, err := os.ReadFile(gi)
+	if err != nil {
+		return notes, nil // no .gitignore: nothing to rename
+	}
+	lines := strings.Split(string(b), "\n")
+	changed := false
+	for i, l := range lines {
+		t := strings.TrimSpace(l)
+		if strings.TrimSuffix(strings.TrimPrefix(t, "/"), "/") == LegacyDataDirName {
+			lines[i] = strings.Replace(l, LegacyDataDirName, DataDirName, 1)
+			changed = true
+		}
+	}
+	if changed {
+		if !dry {
+			if err := os.WriteFile(gi, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+				return notes, err
+			}
+		}
+		notes = append(notes, ".gitignore: "+LegacyDataDirName+"/ → "+DataDirName+"/")
+	}
+	return notes, nil
 }

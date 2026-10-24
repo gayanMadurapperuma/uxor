@@ -1,8 +1,19 @@
-== src/App.tsx (typescript, 6 loc)
-  module    src/App 1-6 exported=true parent=-1 | 
+== src/App.tsx (typescript, 24 loc)
+  module    src/App 1-24 exported=true parent=-1 | 
   function  App 4-6 exported=true parent=0 | function App(props: { name: string })
+  function  AuthProvider 8-18 exported=true parent=0 | function AuthProvider(props: { service: UserService })
+  function  AuthProvider.handleSignIn 9-12 exported=false parent=2 | const handleSignIn = async (id: number)
+  function  AuthProvider.handleReset 13-15 exported=false parent=2 | const handleReset = function ()
+  class     Banner 20-24 exported=true parent=0 | class Banner extends React.Component
+  method    Banner.handleDismiss 21-23 exported=true parent=5 | handleDismiss = ()
   src/App IMPORTS name="react" qual="React" member="default" L1
   src/App IMPORTS name="./services/userService" qual="UserService" member="UserService" L2
+  src/App IMPORTS name="./services/userService" qual="formatUser" member="formatUser" L2
+  AuthProvider.handleSignIn CALLS name="getUserById" qual="props.service" member="" L10
+  AuthProvider.handleSignIn CALLS name="formatUser" qual="" member="" L11
+  AuthProvider CALLS name="handleSignIn" qual="" member="" L17
+  Banner EXTENDS name="Component" qual="React" member="" L20
+  Banner.handleDismiss CALLS name="setState" qual="this" member="" L22
 == src/base.ts (typescript, 5 loc)
   module    src/base 1-5 exported=true parent=-1 | 
   class     BaseService 1-5 exported=true parent=0 | class BaseService

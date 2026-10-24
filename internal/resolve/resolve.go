@@ -19,14 +19,14 @@ import (
 	"sort"
 	"time"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/config"
-	"github.com/gayanmadurapperuma/codegraph/internal/parse"
-	"github.com/gayanmadurapperuma/codegraph/internal/store"
+	"github.com/gayanmadurapperuma/uxor/internal/config"
+	"github.com/gayanmadurapperuma/uxor/internal/parse"
+	"github.com/gayanmadurapperuma/uxor/internal/store"
 )
 
 // Version identifies the resolution rules; bumping it forces a full
-// re-resolve of existing indexes.
-const Version = "1"
+// re-resolve of existing indexes. 2: Go closures are lexical (D30).
+const Version = "2"
 
 // FullFraction is the share of dirty files above which a full resolve is
 // cheaper than a scoped one.

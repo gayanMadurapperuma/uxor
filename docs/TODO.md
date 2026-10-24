@@ -1,13 +1,51 @@
-# codegraph: roadmap and TODO
+# uxor: roadmap and TODO
 
 The single place to resume work from. A new conversation should read, in order:
 1. this file;
 2. `docs/DECISIONS.md` (why things are the way they are);
 3. `docs/TESTING.md` (how to check it by hand).
 
+For a full explanation of the architecture and the theory behind it, see
+`docs/ARCHITECTURE.md`.
+
 Update the checkboxes and the **Status** line at the end of every session.
 
-**Status (2026-10-22):** Phases 1–4 done. Phase 4 (MCP server, hooks, `init`) awaits the user's review, including one interactive check: approve the server in `claude` (TESTING §7). **Next: Phase 5**, the eval harness, constant tuning and the token-savings estimate. Nothing is committed yet; the repo has no commits.
+**Status (2026-10-25):** Phases 1–5.5 done. Phase 5 (the eval harness, tuning, token savings; results in `docs/BENCHMARKS.md`) awaits the user's review. Phase 5.5 is done (D30–D35) and awaits review. **Next: the rename to uxor**, then the "lightest & most trustworthy" items, then Phase 6 (release). Java and Rust are postponed to "Later". The repo has one commit (`18a8022 initial commit`); all Phase 4–5 work is uncommitted.
+
+**Positioning (the user's decision, 2026-10-25):** "lightest and most
+trustworthy". A mature project with the same name exists
+(github.com/colbymchenry/codegraph, 75k stars: Rust/Node, file-watcher
+daemon, about 20 languages, framework routes, one `explore` tool that returns
+source, agent-level A/B benchmark), plus several smaller ones (codesight,
+code-index-mcp, code-graph-mcp, claude-code-graph). Don't race them on
+breadth. Differentiate on:
+1. the smallest context footprint: pointers, not code, under strict
+   budgets;
+2. help on every prompt without a tool call: the prompt hook;
+3. proof on the user's own repo: `eval` and the savings estimate;
+4. transparency: `why`, confidence weights, the hook log;
+5. zero footprint: one binary, no daemon, no telemetry, nothing leaves
+   the machine.
+
+Borrow from them: `alwaysLoad` in `.mcp.json`, cheap freshness after edits
+made outside Claude, possibly one broad "explore" tool, and an agent-level
+`claude -p` A/B benchmark.
+
+**New name: `uxor`** (the user's choice, 2026-10-25). It's Latin for
+"wife", picked in honour of the user's wife, and short and technical as a
+CLI (`uxor init`, `uxor query`). Earlier picks were dropped:
+- `loci`: Loci Notes ships a `loci` CLI;
+- `hansa`: crates.io `hansa` / `hansa-cli`, an AI-agent memory tool
+  with the same `init`/`query` commands.
+
+Checked 2026-10-25 directly on the registries: free on crates.io, npm,
+PyPI and Homebrew, and no GitHub repo with more than 2 stars. Name checks
+must query the registries, not just web search (that missed `hansa-cli`).
+The rename is planned as its own step. It touches the binary, the Go
+module path, the MCP server name, the `.uxor/` directory,
+`.uxor.yaml`, the CLAUDE.md markers, `UXOR_*` environment
+variables and the docs, and needs a migration path for projects already
+set up as codegraph.
 
 ---
 
@@ -45,12 +83,12 @@ prompt, instead of grepping and reading whole files.
 - Keep dependencies minimal; justify any new one.
 - Every phase needs `go test ./...` and `go vet` passing (`make test`).
 - Record design decisions in `docs/DECISIONS.md` (next free number:
-  **D25**).
+  **D37**).
 - Commit or push only when the user asks.
 
 **User-added requirements**
 - **Multi-project isolation.** One DB per project at
-  `<root>/.codegraph/index.db`, with no shared state. Path confinement;
+  `<root>/.uxor/index.db`, with no shared state. Path confinement;
   nested projects are skipped.
 - **Per-project context removal**:
   - `clean` deletes the index;
@@ -74,18 +112,19 @@ prompt, instead of grepping and reading whole files.
   `django/django`. They lived in a session scratchpad, which may be gone, so
   re-clone with `git clone --depth 1` into a temp dir. The eval in Phase 5
   needs history, so it needs `--deepen`.
-- Module path: `github.com/gayanmadurapperuma/codegraph`. This is a
+- Module path: `github.com/gayanmadurapperuma/uxor`. This is a
   **placeholder**; confirm with the user before the release (Phase 6).
 
 ---
 
-## 2. Code map (as of Phase 4)
+## 2. Code map (as of Phase 5)
 
 ```
-cmd/codegraph/          main.go (root, --root flag), index.go (runIndex), stats.go, query.go,
-                        serve.go (version), hook.go (prompt/edited, CODEGRAPH_DEBUG), init.go,
+cmd/uxor/          main.go (root, --root flag, SIGINT/SIGTERM), index.go (runIndex, plain summary),
+                        progress.go (live line + ✓ summary in terminals), stats.go, query.go, eval.go,
+                        serve.go (version), hook.go (prompt/edited, UXOR_DEBUG), init.go,
                         context.go (clean/disable/enable/forget/unforget), main_test.go
-internal/config/        config.go (.codegraph.yaml, defaults), project.go (root finding,
+internal/config/        config.go (.uxor.yaml, defaults), project.go (root finding,
                         Confine, disabled marker, forget list, Clean, EnsureGitignore)
 internal/parse/         extract.go (generic tree-sitter query walker), lang.go (registry,
                         IsTestPath), golang.go / python.go / ecma.go (hooks),
@@ -104,7 +143,10 @@ internal/retrieve/      retrieve.go (FindRelevant, Options, Result), tokenize.go
                         stopwords, test intent), source.go (Source, Fuse/RRF), fts.go
                         (MatchExpr, bm25 seeds, exact names), expand.go (BFS, edge
                         weights, hubs), rank.go (scoring, test factor), pack.go (budget,
-                        grouping, Render), testdata/*.query (goldens)
+                        grouping, Render), tuning.go (Tuning: every ranking constant,
+                        LoadTuning), RankFiles (unpacked ranking), testdata/*.query (goldens)
+internal/eval/          git.go (log, name-status, hunks), eval.go (Run, checkout-parent
+                        worktree, tune/holdout, variants), metrics.go, savings.go (A2/A/B/C/D)
 internal/mcpserver/     server.go (5 tools, lazy read-only store, disabled notice)
 internal/hook/          hook.go (Prompt → additionalContext JSON, Edited → scoped index)
 internal/setup/         setup.go (MCP entry, hooks, CLAUDE.md snippet; Plan/Apply merge;
@@ -112,8 +154,9 @@ internal/setup/         setup.go (MCP entry, hooks, CLAUDE.md snippet; Plan/Appl
 internal/testfix/       test-only: copy + index fixtures
 examples/               .mcp.json, settings.json, CLAUDE.snippet.md (generated)
 testdata/fixtures/      go / python / ts / js mini projects (resolvable)
-docs/                   DECISIONS.md (D1–D24), TESTING.md, TODO.md
-Makefile                build / test / golden (+examples) / bench REPO=
+docs/                   DECISIONS.md (D1–D36), TESTING.md, TODO.md, BENCHMARKS.md,
+                        ARCHITECTURE.md (the A–Z guide, Mermaid diagrams)
+Makefile                build / test / golden (+examples) / bench REPO= / eval REPO= N=
 ```
 
 ---
@@ -121,7 +164,7 @@ Makefile                build / test / golden (+examples) / bench REPO=
 ## 3. Phases
 
 ### Phase 1: Scaffold and indexer ✅ DONE
-- [x] Config (`.codegraph.yaml`): include/exclude globs, languages, max
+- [x] Config (`.uxor.yaml`): include/exclude globs, languages, max
   file size, budgets, retrieve settings, `include_nested`, `db_path`
 - [x] Schema v1: `files`, `symbols`, `edges` (WITHOUT ROWID with
   (src,type,dst) PK and a (dst,type,src) index), `refs`, contentless FTS5
@@ -172,13 +215,13 @@ Makefile                build / test / golden (+examples) / bench REPO=
   bounded bidirectional expansion with hubs, ranking, budget packing.
   `FindRelevant(ctx, st, cfg, query, Options{Budget, MaxFiles})` honours
   ctx and returns per-stage timings (D16–D19).
-- [x] `codegraph query "<text>" [--budget N] [--json] [--why]`. A missing
+- [x] `uxor query "<text>" [--budget N] [--json] [--why]`. A missing
   index gives a clear error; a disabled project answers with a stderr note.
 - [x] Tests: tokenizer, FTS injection against a real FTS table,
   expansion (depth, hubs, best path, max_per_hop), fusion, packing
   (budget, ≥1 line, grouping, indent, cutoff), fixture expectations,
   query goldens (`make golden`), limits and cancellation, CLI, and
-  `BenchmarkFindRelevant` (`CODEGRAPH_BENCH_ROOT` for real repos).
+  `BenchmarkFindRelevant` (`UXOR_BENCH_ROOT` for real repos).
 - [x] Parser fix: comment-only lines dropped from signatures (D20).
 - [x] Measured, 20 commit subjects per repo (details in DECISIONS):
   - django: p50 16 ms, p95 38 ms end to end; 23 MB peak RSS; hit@5 65%;
@@ -194,17 +237,17 @@ Makefile                build / test / golden (+examples) / bench REPO=
 
 ### Phase 4: MCP server and Claude Code hooks ✅ DONE (awaiting review)
 - [x] Hook schema checked against the current Claude Code docs (D21).
-- [x] `codegraph serve`: official go-sdk v1.8.0 over stdio. Tools:
+- [x] `uxor serve`: official go-sdk v1.8.0 over stdio. Tools:
   `find_relevant`, `get_symbol`, `callers_of`, `callees_of`, `impact_of`,
   each with text plus structured content. The read-only store opens lazily
   (a missing index is retried); every call checks disabled; `impact_of`
   confines paths (D22).
-- [x] `codegraph hook prompt`: root from the payload `cwd`, silent no-ops,
+- [x] `uxor hook prompt`: root from the payload `cwd`, silent no-ops,
   a 250 ms deadline, a JSON `additionalContext` block. End to end p95:
   40 ms on django, 47 ms on prometheus.
-- [x] `codegraph hook edited`: confined paths → scoped re-index, about
-  30 ms; always exits 0; `CODEGRAPH_DEBUG` logging.
-- [x] `codegraph init [--dry-run] [--no-index]`: merges `.mcp.json`,
+- [x] `uxor hook edited`: confined paths → scoped re-index, about
+  30 ms; always exits 0; `UXOR_DEBUG` logging.
+- [x] `uxor init [--dry-run] [--no-index]`: merges `.mcp.json`,
   `.claude/settings.json` and the CLAUDE.md snippet; idempotent (D23).
   `examples/` is generated from the same source.
 - [x] Tests: MCP round-trip over in-memory transports (every tool,
@@ -215,11 +258,12 @@ Makefile                build / test / golden (+examples) / bench REPO=
   invalid JSON/examples in sync; store graph queries; CLI init + hooks.
 - [x] Verified with Claude Code: `claude mcp list` sees the server from
   `.mcp.json` ("Pending approval").
-- [ ] **User check**: approve the server in an interactive `claude`
-  session and confirm the hook block and tools (TESTING §7).
+- [x] **User check** (2026-10-24, on a real React/TS monorepo): server
+  approved and connected in `/mcp`, `find_relevant` answered in about 5 ms,
+  and the hook block was produced. That test found the Phase 5.5 issues.
 
-### Phase 5: Eval harness
-- [ ] `codegraph eval [--commits N] [--json]` in `internal/eval/`
+### Phase 5: Eval harness ✅ DONE (awaiting review)
+- [x] `uxor eval [--commits N] [--checkout-parent] [--savings] [--tuning f]… [--json]` in `internal/eval/` (D25–D27)
   - Last N non-merge commits via `git log --no-merges --format=%H%x00%s`.
     Skip commits touching no indexed files, or more than 20 files.
   - Query = message subject (optionally the body). Ground truth = changed
@@ -230,12 +274,16 @@ Makefile                build / test / golden (+examples) / bench REPO=
   - The leakage caveat goes in the output: the index is HEAD, so this is
     optimistic. An optional `--checkout-parent` mode re-indexes a temp
     worktree at each parent; it is slow but honest.
-- [ ] Run it on this repo, django and prometheus; also on one TS repo
-  (suggest one to the user, e.g. a mid-size OSS TS project).
-- [ ] Use the results to tune the Phase 3 constants (seed weights, edge
-  weights, hop decay, hub threshold). Record before and after in DECISIONS.
-- [ ] **Token-savings estimate** (deferred from Phase 3), run on the
-  tuned ranking:
+- [x] Run on django, prometheus and vitejs/vite (the user's choice), 100
+  commits each. This repo has a single commit, so it has no history to
+  evaluate; it is covered by the fixture tests.
+- [x] Tuned, via `retrieve.Tuning` and two variant sweeps: `test_penalty`
+  1.0 and bm25 path weight 3 (D28). Honest MRR rose on both splits of every
+  repo. Not tuned: the config values depth, max_per_hop and hub_fanin.
+- [x] **Token-savings estimate** (deferred from Phase 3), run on the
+  tuned ranking. A was replaced by A2, grep and then ranges, because
+  whole-file A was capped in 87% of tasks (D27). Headline against perfect
+  search: 42% / 51% / 21%. The original plan:
   - Data: about 100 recent non-merge commits per repo (needs
     `git fetch --deepen=400`). Query = commit subject; ground truth =
     changed files and hunks; content taken at that commit; tokens = chars/4.
@@ -243,15 +291,60 @@ Makefile                build / test / golden (+examples) / bench REPO=
     - **A. Typical agent today**: `git grep` keywords, then read whole files
       in hit order until every changed file is read (cap 15).
     - **B. Perfect search**: read only the changed files, in full.
-    - **C. codegraph best case**: the 1,000-token block plus only the
+    - **C. uxor best case**: the 1,000-token block plus only the
       enclosing symbol ranges ±10 lines.
-    - **D. codegraph realistic**: the real `FindRelevant`; a hit in the
+    - **D. uxor realistic**: the real `FindRelevant`; a hit in the
       top 5 files costs C, a miss costs A + 1,000.
   - Report: savings A→C and A→D (% and tokens per task); the hit rate; the
     share of tasks saving more than 50% and the share costing more; 5
     worked examples; caveats (simulated agent, chars/4, discovery and
-    reading tokens only). Optionally save as `docs/BENCHMARKS.md`.
-- [ ] **Stop and report** the numbers.
+    reading tokens only). Saved as `docs/BENCHMARKS.md`.
+- [x] **Stop and report** the numbers.
+
+### Phase 5.5: Fixes from the first real-project test ✅ DONE (awaiting review; D30–D35)
+Found on a real React/TS monorepo (2026-10-24); details in the session
+notes below. Fix for every supported language, measure before and after
+with the eval (django, prometheus, vite).
+- [x] **Nested named functions**: JS/TS `const x = () => …` /
+  `function` expressions inside functions (React handlers such as
+  `handleSignIn` inside a component were invisible); Go named closures
+  (`h := func(…)`). Python nested `def` is already indexed.
+- [x] **Prefix matching across identifier words**: `"handled"*` matched
+  the whole-identifier token `handledelete`, ranking `handleDelete` first.
+  Prefix-match only the split words.
+- [x] **Hyphenated words** (implemented, then off by default: it hurt vite, D35): "sign-in" lost "in" (a stopword) and matched
+  every `signOut`; also search the joined form (`signin`).
+- [x] **Synonyms**: a small built-in list (login ↔ signin, logout ↔
+  signout, …) so prompt words reach differently named code.
+- [x] **Hook log** (opt-in, `.uxor/hook.log`): prompt, files
+  returned, time, so users can see what was injected.
+- [x] **Stronger CLAUDE.md snippet**: Claude grepped instead of calling
+  `find_relevant` for a "where is X" question even with MCP connected.
+
+- [x] Also: re-parse after extraction-rule changes (D34), `make install`
+  (safe on macOS), unknown tuning fields rejected, and measured (D35).
+- Open, for the next ranking work: `handleSignIn` misses the top 5 files
+  for "login function"; "called-by" helpers add noise.
+
+### Next: rename to uxor, then the "lightest & most trustworthy" work (plan each first)
+- [x] Rename codegraph → uxor (D36): done; the user still renames the GitHub repo and git remote. module path, binary, MCP server name, data
+  dir and config file, markers, env vars, docs; migrate projects already
+  set up. The user renames the GitHub repo at the same time.
+- [ ] `alwaysLoad` in `.mcp.json` (fixes Claude grepping instead of using
+  the tools).
+- [ ] Freshness after edits outside Claude (git pull, editors), without a
+  daemon.
+- [ ] Agent-level benchmark: the same task in `claude -p`, with and
+  without, real tokens and cost.
+- [ ] Ranking: fewer, better lines (helper noise, exact-name dominance).
+
+### Later: more languages, Java and Rust (postponed by the user, 2026-10-24)
+Chosen languages; the product is tuned first (Phase 5.5). Per language: the official tree-sitter
+grammar (a new dependency each; justify in DECISIONS), a `.scm` query
+designed for nested definitions from the start, hooks, resolver import
+rules (Java packages/imports with Maven/Gradle source roots; Rust
+`mod`/`use`/crates with Cargo workspaces), test detection (JUnit,
+`#[test]`), a fixture with goldens, and an eval on a real repo.
 
 ### Phase 6: Release
 - [ ] Confirm the module path and repo name with the user.
@@ -303,7 +396,7 @@ Makefile                build / test / golden (+examples) / bench REPO=
 - Go build-tagged duplicate files (e.g. `labels_slicelabels.go`,
   `labels_stringlabels.go`) produce duplicate symbols; ranking may show
   either.
-- The `.codegraph/` WAL/SHM files are created 0644. The 0700 directory is
+- The `.uxor/` WAL/SHM files are created 0644. The 0700 directory is
   the real access boundary (D8).
 - Global (0.3) guesses between sibling JS apps in one repo can cross
   app boundaries (seen in prometheus `web/ui/*`). A possible fix is
@@ -316,13 +409,27 @@ Makefile                build / test / golden (+examples) / bench REPO=
   - bm25 terms are OR'ed with no document-frequency cut. Very common words
     (e.g. "add", "get") rely on bm25's IDF. An `fts5vocab` table (schema
     v3) would allow dropping terms that match most of the corpus.
-  - Commit-subject recall is optimistic (index at HEAD). Measure honestly
-    with the Phase 5 `--checkout-parent` mode.
+  - Commit-subject recall at HEAD is optimistic. Measured with
+    `--checkout-parent` in Phase 5, it is 4–8 MRR points lower
+    (BENCHMARKS.md).
   - Existing indexes keep pre-D20 signatures until files are re-parsed;
     `index --full` refreshes them.
 
+- Eval and tuning (Phase 5):
+  - The A2 savings baseline is still heavy: capped at 15 files in 75–87%
+    of tasks, because common short terms match thousands of lines. B is
+    the conservative comparison.
+  - vite is the weak spot: 55% hook hits, terse "chore/fix(build)"
+    subjects, and the hardest module resolution.
+  - The django hook end to end is p95 64 ms warm and 90–145 ms cold, up
+    from Phase 4's 40 ms, though still inside 250 ms. In-process p95 is 28
+    ms at HEAD; checkout-parent runs measure higher because they re-index
+    between queries.
+  - The test penalty is now off (D28), so tests can pass score on to the
+    helpers they call (see the D17 case). Watch for it in `why`.
+
 - Hooks and MCP (Phase 4):
-  - `codegraph` must be on PATH for the generated hook and server
+  - `uxor` must be on PATH for the generated hook and server
     commands; Phase 6 install docs must say so (or init could write an
     absolute path).
   - Whether `MultiEdit`/`NotebookEdit` still exist was unverified in the
@@ -331,8 +438,8 @@ Makefile                build / test / golden (+examples) / bench REPO=
 
 ## 5. Open questions for the user
 - The final module path or repo URL (before Phase 6).
-- When to make the first commit. Nothing is committed yet; ask before
-  committing, and branch off the default branch first.
+- When to commit the Phase 4–5 work. Only `18a8022 initial commit`
+  exists; ask before committing, and branch off the default branch first.
 
 ## 6. How to resume in a new conversation
 1. Tell Claude: "Read `docs/TODO.md` and continue with the next phase."

@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/store"
+	"github.com/gayanmadurapperuma/uxor/internal/store"
 )
 
 func newStatsCmd() *cobra.Command {
@@ -48,7 +48,7 @@ func newStatsCmd() *cobra.Command {
 			}
 			state := "enabled"
 			if p.Disabled() {
-				state = "DISABLED (hooks and MCP tools return nothing; `codegraph enable` to resume)"
+				state = "DISABLED (hooks and MCP tools return nothing; `uxor enable` to resume)"
 			}
 			fmt.Fprintf(out, "root:      %s\n", p.Root)
 			fmt.Fprintf(out, "db:        %s (%s)\n", p.DBPath, humanBytes(s.DBBytes))
@@ -87,7 +87,7 @@ func newStatsCmd() *cobra.Command {
 			if len(s.TopPageRank) > 0 {
 				stale := ""
 				if s.PageRankStale {
-					stale = " (stale; next `codegraph index` recomputes)"
+					stale = " (stale; next `uxor index` recomputes)"
 				}
 				fmt.Fprintf(out, "\ntop PageRank%s:\n", stale)
 				for _, h := range s.TopPageRank {

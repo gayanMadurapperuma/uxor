@@ -1,4 +1,4 @@
-// Package setup holds what `codegraph init` writes into a project (the MCP
+// Package setup holds what `uxor init` writes into a project (the MCP
 // server entry, the hooks and the CLAUDE.md snippet) and merges it into
 // existing files. The examples/ directory is generated from the same values.
 package setup
@@ -14,22 +14,82 @@ import (
 )
 
 // ServerName is the key of the MCP server entry.
-const ServerName = "codegraph"
+const ServerName = "uxor"
+
+// Setup written before the rename to uxor (D36), which init replaces. Only
+// entries recognisably ours are touched: another tool named codegraph also
+// registers a "codegraph" server and writes its own CLAUDE.md section.
+const (
+	legacyServerName     = "codegraph"
+	legacyCommand        = "codegraph"
+	legacyHookPrefix     = "codegraph hook "
+	legacySnippetStart   = "<!-- codegraph:start -->"
+	legacySnippetEnd     = "<!-- codegraph:end -->"
+	legacySnippetHeading = "## Code navigation (codegraph)"
+)
+
+// isLegacyServer reports whether an .mcp.json entry is our pre-rename one:
+// our exact arguments, and a codegraph command (possibly an absolute path).
+func isLegacyServer(v any) bool {
+	m, _ := v.(map[string]any)
+	args, _ := m["args"].([]any)
+	if len(args) != 3 || args[0] != "--root" || args[1] != "${CLAUDE_PROJECT_DIR:-.}" || args[2] != "serve" {
+		return false
+	}
+	cmd, _ := m["command"].(string)
+	return cmd == legacyCommand || strings.HasSuffix(cmd, "/"+legacyCommand)
+}
+
+// dropLegacyHooks removes our pre-rename hook commands, and any group or
+// event left empty, reporting whether anything was removed.
+func dropLegacyHooks(hooks map[string]any) bool {
+	removed := false
+	for event, v := range hooks {
+		groups, _ := v.([]any)
+		var keepGroups []any
+		for _, g := range groups {
+			gm, _ := g.(map[string]any)
+			hs, _ := gm["hooks"].([]any)
+			var keep []any
+			for _, h := range hs {
+				hm, _ := h.(map[string]any)
+				if cmd, _ := hm["command"].(string); strings.HasPrefix(cmd, legacyHookPrefix) {
+					removed = true
+					continue
+				}
+				keep = append(keep, h)
+			}
+			if len(keep) == 0 && len(hs) > 0 {
+				continue
+			}
+			if gm != nil && len(keep) != len(hs) {
+				gm["hooks"] = keep
+			}
+			keepGroups = append(keepGroups, g)
+		}
+		if len(keepGroups) == 0 && len(groups) > 0 {
+			delete(hooks, event)
+		} else if len(keepGroups) != len(groups) {
+			hooks[event] = keepGroups
+		}
+	}
+	return removed
+}
 
 // MCPServer is the .mcp.json entry. The root is passed explicitly so the
 // server indexes the project Claude Code was started in.
 func MCPServer() map[string]any {
 	return map[string]any{
 		"type":    "stdio",
-		"command": "codegraph",
+		"command": "uxor",
 		"args":    []any{"--root", "${CLAUDE_PROJECT_DIR:-.}", "serve"},
 	}
 }
 
 // Hook commands; init recognises existing entries by these prefixes.
 const (
-	PromptCommand = "codegraph hook prompt"
-	EditedCommand = "codegraph hook edited"
+	PromptCommand = "uxor hook prompt"
+	EditedCommand = "uxor hook edited"
 	// EditMatcher selects the file-editing tools. MultiEdit and NotebookEdit
 	// are listed in case the Claude Code version has them; a matcher naming an
 	// absent tool is harmless.
@@ -52,15 +112,18 @@ func Hooks() map[string]any {
 
 // Snippet markers make the CLAUDE.md addition idempotent and removable.
 const (
-	SnippetStart = "<!-- codegraph:start -->"
-	SnippetEnd   = "<!-- codegraph:end -->"
+	SnippetStart = "<!-- uxor:start -->"
+	SnippetEnd   = "<!-- uxor:end -->"
 )
 
-// Snippet is appended to the project's CLAUDE.md.
+// Snippet is appended to the project's CLAUDE.md. The text between the
+// markers belongs to uxor: init refreshes it when it is outdated (D33).
 const Snippet = SnippetStart + `
-## Code navigation (codegraph)
-- Call the ` + "`find_relevant`" + ` MCP tool before broad Grep/Glob searches, then read only the
-  listed line ranges. A prompt hook may already list likely locations.
+## Code navigation (uxor)
+- For any "where is / how does / what calls X" question, call the uxor
+  ` + "`find_relevant`" + ` MCP tool first, before Grep, Glob or even a targeted grep,
+  then read only the listed line ranges. A prompt hook may already list likely
+  locations; start there.
 - Use ` + "`get_symbol`" + ` to locate a definition by name.
 - Before changing a signature, behaviour or file, check ` + "`callers_of`" + ` and ` + "`impact_of`" + `.
 - Weights below 1 in results are resolution guesses; confirm by reading.
@@ -84,11 +147,16 @@ func Plan(root string) ([]Change, error) {
 			servers = map[string]any{}
 			m["mcpServers"] = servers
 		}
-		if _, ok := servers[ServerName]; ok {
-			return false, "server entry exists"
+		changed := false
+		if v, ok := servers[legacyServerName]; ok && isLegacyServer(v) {
+			delete(servers, legacyServerName)
+			changed = true
 		}
-		servers[ServerName] = MCPServer()
-		return true, ""
+		if _, ok := servers[ServerName]; !ok {
+			servers[ServerName] = MCPServer()
+			changed = true
+		}
+		return changed, "server entry exists"
 	})
 	if err != nil {
 		return nil, err
@@ -101,7 +169,7 @@ func Plan(root string) ([]Change, error) {
 			hooks = map[string]any{}
 			m["hooks"] = hooks
 		}
-		changed := false
+		changed := dropLegacyHooks(hooks)
 		for event, groups := range Hooks() {
 			cmd := PromptCommand
 			if event == "PostToolUse" {
@@ -191,8 +259,34 @@ func planSnippet(root string) (Change, error) {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return Change{}, err
 	}
-	if bytes.Contains(b, []byte(SnippetStart)) {
-		return Change{Path: rel, Action: "unchanged: snippet present"}, nil
+	// A pre-rename block of ours becomes the current one in place (or is
+	// dropped when the current one is already there).
+	if i := bytes.Index(b, []byte(legacySnippetStart)); i >= 0 {
+		if j := bytes.Index(b[i:], []byte(legacySnippetEnd)); j >= 0 {
+			end := i + j + len(legacySnippetEnd)
+			if bytes.Contains(b[i:end], []byte(legacySnippetHeading)) {
+				var data []byte
+				if bytes.Contains(b, []byte(SnippetStart)) {
+					data = append(append([]byte{}, b[:i]...), bytes.TrimPrefix(b[end:], []byte("\n"))...)
+				} else {
+					data = append(append(append([]byte{}, b[:i]...), strings.TrimSuffix(Snippet, "\n")...), b[end:]...)
+				}
+				return Change{Path: rel, Action: "update: codegraph block replaced by uxor", data: data}, nil
+			}
+		}
+	}
+	if i := bytes.Index(b, []byte(SnippetStart)); i >= 0 {
+		j := bytes.Index(b[i:], []byte(SnippetEnd))
+		if j < 0 {
+			return Change{Path: rel, Action: "unchanged: snippet start without end marker"}, nil
+		}
+		end := i + j + len(SnippetEnd)
+		if string(b[i:end])+"\n" == Snippet {
+			return Change{Path: rel, Action: "unchanged: snippet up to date"}, nil
+		}
+		// Refresh our own block; everything outside the markers is kept.
+		data := append(append(append([]byte{}, b[:i]...), strings.TrimSuffix(Snippet, "\n")...), b[end:]...)
+		return Change{Path: rel, Action: "update: snippet refreshed", data: data}, nil
 	}
 	action := "update"
 	if errors.Is(err, os.ErrNotExist) {

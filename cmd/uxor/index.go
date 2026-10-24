@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/spf13/cobra"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/config"
-	"github.com/gayanmadurapperuma/codegraph/internal/index"
-	"github.com/gayanmadurapperuma/codegraph/internal/store"
+	"github.com/gayanmadurapperuma/uxor/internal/config"
+	"github.com/gayanmadurapperuma/uxor/internal/index"
+	"github.com/gayanmadurapperuma/uxor/internal/store"
 )
 
 func newIndexCmd() *cobra.Command {
@@ -18,7 +19,7 @@ func newIndexCmd() *cobra.Command {
 		Long: "Index the project. Without paths, the whole project is scanned and files that\n" +
 			"disappeared are removed. With paths, only those files are (re)indexed.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			p, err := openProject()
+			p, err := openMigrated(cmd, false)
 			if err != nil {
 				return err
 			}
@@ -39,18 +40,43 @@ func runIndex(cmd *cobra.Command, p *config.Project, opt index.Options) error {
 	if changed, err := p.EnsureGitignore(); err != nil {
 		return err
 	} else if changed {
-		fmt.Fprintln(cmd.ErrOrStderr(), "added .codegraph/ to .gitignore")
+		fmt.Fprintln(cmd.ErrOrStderr(), "added .uxor/ to .gitignore")
 	}
 	st, err := store.Open(cmd.Context(), p.DBPath, store.Options{})
 	if err != nil {
 		return err
 	}
 	defer st.Close()
+	// In a terminal: a live line on stderr while working, then ✓ lines.
+	// Elsewhere (pipes, CI, tests): the plain summary, unchanged.
+	var lp *liveProgress
+	if isTerminal(cmd.OutOrStdout()) && isTerminal(cmd.ErrOrStderr()) {
+		lp = newLiveProgress(cmd.ErrOrStderr())
+		defer lp.stop()
+		opt.Progress = lp.Event
+	}
 	res, err := index.Run(cmd.Context(), p, st, opt)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(),
+	if res.Reparsed {
+		defer fmt.Fprintln(cmd.ErrOrStderr(), "note: uxor's extraction rules changed, so every file was re-parsed once")
+	}
+	if lp != nil {
+		lp.stop()
+		printChecks(cmd.OutOrStdout(), res)
+	} else {
+		printSummary(cmd.OutOrStdout(), p, res)
+	}
+	for _, e := range res.Errors {
+		fmt.Fprintln(cmd.ErrOrStderr(), "  error:", e)
+	}
+	return nil
+}
+
+// printSummary is the plain summary of an index run, for pipes and logs.
+func printSummary(w io.Writer, p *config.Project, res *index.Result) {
+	fmt.Fprintf(w,
 		"%s: %d files scanned, %d parsed, %d unchanged, %d skipped, %d removed, %d failed in %s\n",
 		p.Root, res.Scanned, res.Parsed, res.Unchanged, res.Skipped, res.Removed, res.Failed,
 		res.Elapsed.Round(1e6))
@@ -59,17 +85,13 @@ func runIndex(cmd *cobra.Command, p *config.Project, opt index.Options) error {
 		if rr.Full {
 			mode = "full"
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "resolve (%s): %d files, %d/%d refs resolved (%s) → %d edges in %s",
+		fmt.Fprintf(w, "resolve (%s): %d files, %d/%d refs resolved (%s) → %d edges in %s",
 			mode, rr.Files, rr.Resolved, rr.Refs, percent(rr.Resolved, rr.Refs), rr.Edges, rr.Elapsed.Round(1e6))
 		if rr.PageRankNodes > 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "; pagerank %d nodes in %s", rr.PageRankNodes, rr.PageRankTime.Round(1e6))
+			fmt.Fprintf(w, "; pagerank %d nodes in %s", rr.PageRankNodes, rr.PageRankTime.Round(1e6))
 		}
-		fmt.Fprintln(cmd.OutOrStdout())
+		fmt.Fprintln(w)
 	}
-	for _, e := range res.Errors {
-		fmt.Fprintln(cmd.ErrOrStderr(), "  error:", e)
-	}
-	return nil
 }
 
 func percent(n, d int) string {

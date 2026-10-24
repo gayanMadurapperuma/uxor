@@ -4,7 +4,7 @@
       {
         "hooks": [
           {
-            "command": "codegraph hook edited",
+            "command": "uxor hook edited",
             "timeout": 30,
             "type": "command"
           }
@@ -16,7 +16,7 @@
       {
         "hooks": [
           {
-            "command": "codegraph hook prompt",
+            "command": "uxor hook prompt",
             "timeout": 5,
             "type": "command"
           }

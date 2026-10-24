@@ -18,6 +18,12 @@
 (source_file (var_declaration (var_spec_list (var_spec name: (identifier) @name) @def.var)))
 (source_file (const_declaration (const_spec name: (identifier) @name) @def.var))
 
+; A named closure (check := func(…) {…}) is a function under its enclosing
+; function (D30). Short variable declarations only occur inside functions.
+(short_var_declaration
+  left: (expression_list . (identifier) @name .)
+  right: (expression_list . (func_literal body: (_) @body) .)) @def.function
+
 (field_declaration_list (field_declaration !name type: [(type_identifier) (qualified_type) (generic_type)] @extends))
 (interface_type (type_elem [(type_identifier) (qualified_type)] @extends))
 

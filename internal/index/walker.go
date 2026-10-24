@@ -12,8 +12,8 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/config"
-	"github.com/gayanmadurapperuma/codegraph/internal/parse"
+	"github.com/gayanmadurapperuma/uxor/internal/config"
+	"github.com/gayanmadurapperuma/uxor/internal/parse"
 )
 
 // Entry is a candidate source file.
@@ -74,7 +74,7 @@ func MatchAny(globs []string, rel string) bool { return matchAny(globs, rel) }
 // skipDirs are pruned during filesystem walks without glob matching.
 var skipDirs = map[string]bool{
 	".git": true, "node_modules": true, "vendor": true, "dist": true, "build": true,
-	".venv": true, "venv": true, "__pycache__": true, config.DataDirName: true, ".next": true,
+	".venv": true, "venv": true, "__pycache__": true, config.DataDirName: true, config.LegacyDataDirName: true, ".next": true,
 	".tox": true, ".mypy_cache": true, "coverage": true,
 }
 
@@ -198,7 +198,7 @@ func fsFiles(root string, includeNested bool) ([]string, error) {
 }
 
 // nestedChecker reports whether rel lives inside a nested project (a
-// subdirectory with its own .codegraph.yaml, .codegraph/ or .git), unless
+// subdirectory with its own .uxor.yaml, .uxor/ or .git), unless
 // include_nested is set. Results are cached per directory.
 func nestedChecker(p *config.Project) func(rel string) bool {
 	if p.Config.IncludeNested {
@@ -213,8 +213,10 @@ func nestedChecker(p *config.Project) func(rel string) bool {
 		abs := filepath.Join(p.Root, filepath.FromSlash(dir))
 		v := config.IsProjectMarker(abs)
 		if !v {
-			if fi, err := os.Stat(filepath.Join(abs, config.DataDirName)); err == nil && fi.IsDir() {
-				v = true
+			for _, d := range []string{config.DataDirName, config.LegacyDataDirName} {
+				if fi, err := os.Stat(filepath.Join(abs, d)); err == nil && fi.IsDir() {
+					v = true
+				}
 			}
 		}
 		if !v {

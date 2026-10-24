@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/config"
+	"github.com/gayanmadurapperuma/uxor/internal/config"
 )
 
 type pyResolver struct {

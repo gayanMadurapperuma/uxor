@@ -3,8 +3,8 @@ package resolve
 import (
 	"strings"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/config"
-	"github.com/gayanmadurapperuma/codegraph/internal/parse"
+	"github.com/gayanmadurapperuma/uxor/internal/config"
+	"github.com/gayanmadurapperuma/uxor/internal/parse"
 )
 
 // Confidence weights (D12). Exact resolutions through scope, bindings or a
@@ -255,6 +255,19 @@ func (r *resolver) isSelf(sc *scope, src *sym, q string) bool {
 // lexical finds an unqualified name in the file's own scopes.
 func (r *resolver) lexical(sc *scope, src *sym, name string, kinds kindSet) *sym {
 	if sc.f.family == "go" {
+		// A named closure (keep := func…) is local to the functions that
+		// enclose it; everything else is package scope (D30).
+		r.t.symbolsOf(sc.f.id)
+		for a := src; a != nil && a.kind != parse.KindModule; a = r.t.sym(a.parent) {
+			for _, c := range r.t.childrenOf(a) {
+				if c.name == name && c.kind == parse.KindFunction && kinds[c.kind] {
+					return c
+				}
+			}
+			if a.parent == 0 {
+				break
+			}
+		}
 		for _, s := range r.t.byName(name) {
 			if !kinds[s.kind] || s.kind == parse.KindMethod {
 				continue

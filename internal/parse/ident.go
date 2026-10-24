@@ -44,12 +44,23 @@ func Split(s string) []string {
 	return parts
 }
 
-// SplitText returns s followed by its split parts, for full-text indexing,
-// so both the exact identifier and its words match.
+// WholeMarker prefixes the whole-identifier token in the full-text index
+// (getUserById → "0getUserById"), so a prefix query on a word ("handled"*)
+// can never match across word boundaries of a longer identifier
+// ("handleDelete"). Exact identifier searches use WholeTerm (D31).
+const WholeMarker = "0"
+
+// SplitText returns, for full-text indexing, the marked whole identifier
+// followed by its split parts, so both the exact identifier and its words
+// match. A one-word identifier is just itself.
 func SplitText(s string) string {
 	parts := Split(s)
 	if len(parts) <= 1 {
 		return s
 	}
-	return s + " " + strings.Join(parts, " ")
+	return WholeMarker + s + " " + strings.Join(parts, " ")
 }
+
+// WholeTerm is the search term for a whole multi-word identifier, matching
+// what SplitText indexes.
+func WholeTerm(s string) string { return WholeMarker + strings.ToLower(s) }

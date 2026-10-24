@@ -4,45 +4,73 @@ import (
 	"context"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/parse"
-	"github.com/gayanmadurapperuma/codegraph/internal/store"
+	"github.com/gayanmadurapperuma/uxor/internal/parse"
+	"github.com/gayanmadurapperuma/uxor/internal/store"
 )
 
 func TestTokenize(t *testing.T) {
 	cases := []struct {
-		in     string
-		terms  []string
-		idents []string
-		tests  bool
+		in      string
+		terms   []string
+		whole   []string
+		idents  []string
+		tests   bool
+		phrases [][]string
 	}{
-		{"get user by id", []string{"get", "user", "id"}, nil, false},
-		{"Please fix the bug in formatUser", []string{"formatuser", "format", "user"}, []string{"formatUser"}, false},
-		{"why does get_user_by_id fail?", []string{"get", "user", "id", "fail"}, []string{"get_user_by_id"}, false},
-		{"store.NewMemRepo returns nil", []string{"store", "newmemrepo", "new", "mem", "repo", "returns", "nil"}, []string{"NewMemRepo"}, false},
-		{"add tests for HTTPServer timeouts", []string{"add", "httpserver", "http", "server", "timeouts"}, []string{"HTTPServer"}, true},
-		{"Render", []string{"render"}, []string{"Render"}, false},
-		{"fix test_release_memory", []string{"release", "memory"}, []string{"test_release_memory"}, true},
-		{"Add retry to Cart", []string{"add", "retry", "cart"}, []string{"Cart"}, false},
-		{"user user USER", []string{"user"}, []string{"USER"}, false},
-		{"x 42 a", nil, nil, false},
-		{"the code", nil, nil, false},
-		{`NEAR("a" -b) * col:x`, []string{"near", "col"}, nil, false},
+		{"get user by id", []string{"get", "user", "id"}, nil, nil, false, nil},
+		{"Please fix the bug in formatUser", []string{"format", "user"}, []string{"formatuser"}, []string{"formatUser"}, false, nil},
+		{"why does get_user_by_id fail?", []string{"get", "user", "id", "fail"}, nil, []string{"get_user_by_id"}, false, nil},
+		{"store.NewMemRepo returns nil", []string{"store", "new", "mem", "repo", "returns", "nil"}, []string{"newmemrepo"}, []string{"NewMemRepo"}, false, nil},
+		{"add tests for HTTPServer timeouts", []string{"add", "http", "server", "timeouts"}, []string{"httpserver"}, []string{"HTTPServer"}, true, nil},
+		{"Render", []string{"render"}, nil, []string{"Render"}, false, nil},
+		{"fix test_release_memory", []string{"release", "memory"}, nil, []string{"test_release_memory"}, true, nil},
+		{"Add retry to Cart", []string{"add", "retry", "cart"}, nil, []string{"Cart"}, false, nil},
+		{"user user USER", []string{"user"}, nil, []string{"USER"}, false, nil},
+		{"x 42 a", nil, nil, nil, false, nil},
+		{"the code", nil, nil, nil, false, nil},
+		{`NEAR("a" -b) * col:x`, []string{"near", "col"}, nil, nil, false, nil},
+		// A hyphenated compound is also searched as a phrase and joined.
+		{"fix the real-time feed", []string{"real", "time", "feed", "realtime"}, []string{"realtime"}, nil, false,
+			[][]string{{"real", "time"}}},
+		// Synonym groups: "sign-in" reaches login, log in, logon (D32).
+		{"where sign-in is handled", []string{"sign", "handled", "signin", "login", "logon"},
+			[]string{"signin", "login", "logon"}, nil, false, [][]string{{"sign", "in"}, {"log", "in"}}},
+		{"where is the login function", []string{"login", "signin", "logon"},
+			[]string{"login", "signin", "logon"}, nil, false, [][]string{{"log", "in"}, {"sign", "in"}}},
 	}
 	for _, c := range cases {
-		q := Tokenize(c.in)
-		if !reflect.DeepEqual(q.Terms, c.terms) || !reflect.DeepEqual(q.Idents, c.idents) || q.WantsTests != c.tests {
-			t.Errorf("Tokenize(%q) = terms %q idents %q tests %v; want %q %q %v",
-				c.in, q.Terms, q.Idents, q.WantsTests, c.terms, c.idents, c.tests)
+		q := tokenize(c.in, true, true) // every expansion; defaults are checked below
+		if !reflect.DeepEqual(q.Terms, c.terms) || !reflect.DeepEqual(q.Whole, c.whole) ||
+			!reflect.DeepEqual(q.Idents, c.idents) || q.WantsTests != c.tests || !reflect.DeepEqual(q.Phrases, c.phrases) {
+			t.Errorf("Tokenize(%q) = terms %q whole %q idents %q tests %v phrases %q; want %q %q %q %v %q",
+				c.in, q.Terms, q.Whole, q.Idents, q.WantsTests, q.Phrases, c.terms, c.whole, c.idents, c.tests, c.phrases)
 		}
 	}
 }
 
+// TestTokenizeDefaults: compounds are off by default (D35), synonyms on.
+func TestTokenizeDefaults(t *testing.T) {
+	q := Tokenize("fix the real-time feed")
+	if len(q.Phrases) != 0 || slices.Contains(q.Terms, "realtime") {
+		t.Errorf("compound expanded by default: %+v", q)
+	}
+	q = Tokenize("where sign-in is handled")
+	if !slices.Contains(q.Terms, "login") || !slices.ContainsFunc(q.Phrases, func(p []string) bool {
+		return slices.Equal(p, []string{"sign", "in"})
+	}) {
+		t.Errorf("sign-in should still reach the login synonyms: %+v", q)
+	}
+}
+
 func TestMatchExpr(t *testing.T) {
-	if got := MatchExpr([]string{"get", "user", `a"b`}); got != `"get" OR "user"* OR "a""b"` {
-		t.Errorf("got %s", got)
+	got := MatchExpr(Query{Terms: []string{"get", "user", `a"b`}, Whole: []string{"formatuser"},
+		Phrases: [][]string{{"sign", "in"}}})
+	if want := `"get" OR "user"* OR "a""b" OR "0formatuser" OR "formatuser" OR "sign in"`; got != want {
+		t.Errorf("got %s, want %s", got, want)
 	}
 }
 
@@ -172,7 +200,7 @@ func TestPack(t *testing.T) {
 		{ID: 4, Kind: parse.KindMethod, Name: "find", Signature: "find(id: number)", Path: "c.ts", StartLine: 5, EndLine: 6, Score: 1},
 		{ID: 5, Kind: parse.KindFunction, Name: "weak", Signature: "def weak()", Path: "d.py", StartLine: 1, EndLine: 2, Score: 0.7},
 	}
-	files, text := pack(cands, 1000, 0)
+	files, text := pack(cands, 1000, 0, DefaultTuning())
 	want := "a.py:1-9  class C\n  a.py:3-4  def m(self)\nb.py:1-2  def f()\nc.ts:5-6  method find(id: number)\n"
 	if text != want {
 		t.Errorf("text:\n%s\nwant:\n%s", text, want)
@@ -184,7 +212,7 @@ func TestPack(t *testing.T) {
 
 	// The budget is never exceeded, except by the single best line.
 	for budget := 1; budget <= 40; budget++ {
-		_, text := pack(cands, budget, 0)
+		_, text := pack(cands, budget, 0, DefaultTuning())
 		n := strings.Count(text, "\n")
 		if n == 0 {
 			t.Fatalf("budget %d: no lines", budget)
@@ -193,10 +221,10 @@ func TestPack(t *testing.T) {
 			t.Errorf("budget %d: used %d tokens:\n%s", budget, Tokens(text), text)
 		}
 	}
-	if _, text := pack(cands, 1, 0); text != "a.py:3-4  def m(self)\n" {
+	if _, text := pack(cands, 1, 0, DefaultTuning()); text != "a.py:3-4  def m(self)\n" {
 		t.Errorf("tiny budget: %q", text)
 	}
-	if files, _ := pack(cands, 1000, 1); len(files) != 1 {
+	if files, _ := pack(cands, 1000, 1, DefaultTuning()); len(files) != 1 {
 		t.Errorf("max files 1: %+v", files)
 	}
 }

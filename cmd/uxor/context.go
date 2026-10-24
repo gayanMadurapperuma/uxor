@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/gayanmadurapperuma/codegraph/internal/index"
-	"github.com/gayanmadurapperuma/codegraph/internal/store"
+	"github.com/gayanmadurapperuma/uxor/internal/index"
+	"github.com/gayanmadurapperuma/uxor/internal/store"
 )
 
 // Commands that remove or pause context for the current project only.
@@ -20,7 +20,7 @@ func newCleanCmd() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "clean",
-		Short: "Delete this project's index and local state (.codegraph/)",
+		Short: "Delete this project's index and local state (.uxor/)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p, err := openProject()
 			if err != nil {
@@ -65,7 +65,7 @@ func newDisableCmd(disable bool) *cobra.Command {
 			if err := p.SetDisabled(disable); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "codegraph %s for %s\n", msg, p.Root)
+			fmt.Fprintf(cmd.OutOrStdout(), "uxor %s for %s\n", msg, p.Root)
 			return nil
 		},
 	}
@@ -77,9 +77,9 @@ func newForgetCmd() *cobra.Command {
 		Use:   "forget <glob>...",
 		Short: "Remove matching paths from the index and keep them out (local, not committed)",
 		Long: "Remove files matching the globs from this project's index and add the globs to\n" +
-			".codegraph/forget.txt so re-indexing never brings them back. Globs are\n" +
+			".uxor/forget.txt so re-indexing never brings them back. Globs are\n" +
 			"root-relative doublestar patterns; a directory name matches everything below it.\n" +
-			"To share an exclude with your team, add it to .codegraph.yaml instead.",
+			"To share an exclude with your team, add it to .uxor.yaml instead.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p, err := openProject()
 			if err != nil {
@@ -108,7 +108,7 @@ func newForgetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(out, "forgot %d indexed files; added %s to .codegraph/forget.txt\n", n, strings.Join(args, ", "))
+			fmt.Fprintf(out, "forgot %d indexed files; added %s to .uxor/forget.txt\n", n, strings.Join(args, ", "))
 			return nil
 		},
 	}
@@ -119,7 +119,7 @@ func newForgetCmd() *cobra.Command {
 func newUnforgetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "unforget <glob>...",
-		Short: "Remove globs from the forget list (run `codegraph index` to re-add files)",
+		Short: "Remove globs from the forget list (run `uxor index` to re-add files)",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p, err := openProject()
@@ -134,7 +134,7 @@ func newUnforgetCmd() *cobra.Command {
 			if err := p.SetForgetGlobs(kept); err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "updated forget list; run `codegraph index` to re-index those paths")
+			fmt.Fprintln(cmd.OutOrStdout(), "updated forget list; run `uxor index` to re-index those paths")
 			return nil
 		},
 	}
