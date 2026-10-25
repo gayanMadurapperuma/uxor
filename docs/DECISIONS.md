@@ -830,3 +830,87 @@ Each cause below is reproduced by a fixture test that fails without the fix.
   heading), so another tool's `codegraph` setup is untouched. An
   un-migrated project's config is still read. Verified on this repo and on
   openverse.
+
+### D37. `find_relevant` is always loaded
+- In the real-project test Claude grepped instead of calling uxor, with MCP
+  connected. Claude Code defers MCP tools by default ("tool search"): the
+  model sees names only and must look a tool up first, so a deferred tool
+  loses to a built-in grep.
+- Claude Code's MCP docs: a server can set `_meta:
+  {"anthropic/alwaysLoad": true}` on a tool (Claude Code v2.1.285+; here
+  v2.1.310). Users can also set `"alwaysLoad": true` for a whole server in
+  `.mcp.json`.
+- uxor marks **only `find_relevant`**; `get_symbol`, `callers_of`,
+  `callees_of` and `impact_of` stay deferred. That puts one tool
+  definition in context instead of five ("lightest").
+- No config change, so existing projects get it with the new binary.
+  Verified by an MCP round-trip test and over stdio
+  (`tools/list` → `_meta` on `find_relevant` only).
+
+### D38. Word-aligned identifier parts; one related line per file
+- **Parts (schema v6).** For "where is the login function",
+  `AuthProvider.handleSignIn` scored 0.54 against 1.14 for methods named
+  exactly `signIn`: only those carried the whole token `0signin`. So it
+  ranked 9th and missed the 5-file hook block.
+  - `parse.SplitText` now also indexes every contiguous run of 2+ words of
+    an identifier as a marked token (`handleSignIn` → `0handlesign 0signin`;
+    beyond 6 words, runs of 2–3 only).
+  - Runs start and end on word boundaries, so D31 holds ("handled" still
+    can't match `handleDelete`). Marked tokens are only matched exactly.
+  - Cost on django: index +0.8% (37.0 → 37.3 MB), indexing time unchanged
+    (3.2–3.5 s).
+  - Benchmark: MRR tune −0.006 / holdout +0.003 on average; prometheus
+    −0.014; hook hit −1.7 points on average. That's within the agreed
+    limit of 2 MRR points per repo.
+  - Kept for the real case: openverse's hook block for that prompt now
+    has the actual login path, `LoginClient` → `handleSubmit` → `useAuth` →
+    `AuthProvider.handleSignIn`.
+- **Related lines (`related_per_file`, default 1).** Lines reached only
+  through the graph (not matches) are capped per file, keeping the best.
+  Matches are never capped; file order and MRR are unaffected. Averaged
+  over the three repos:
+
+  | cap | hook hit | query hit | hook tokens | query tokens |
+  |---|---|---|---|---|
+  | none | 67.3% | 73.7% | 405 | 772 |
+  | **1** | 67.3% | 73.7% | **375 (−7%)** | **682 (−12%)** |
+  | 2 | 67.3% | 73.7% | 393 | 736 |
+  | 0 | 66.7% | 70.3% | 332 | 481 |
+
+  1 gives the fewest tokens at no loss of hits. On openverse it keeps
+  `useAuth` (the key related line) and one helper per repository file
+  instead of three.
+
+### D39. Diverse seeds and collapsed duplicates (from the first real A/B)
+- **The A/B** (openverse: "walk me through a book-cover upload, UI → S3",
+  uxor on vs off): 16 tool calls each, about 1,190 vs 1,170 lines read, and
+  the run without uxor was faster. Causes:
+  - identical declarations copied across files (`COVER_IMAGES_BUCKET_NAME`
+    in 8 Lambda files) took seed slots and answer lines;
+  - Claude's own query wording ("presigned URL", for a path that doesn't
+    use presigned URLs) put the real controller and use case at bm25
+    ranks 42–54, outside the 20 seeds.
+- **`seeds_per_name` = 1**: at most one seed per *identical declaration*
+  (same name and signature), with 5n rows fetched to refill the slots.
+  The first version capped by name alone and dropped interface/
+  implementation pairs (`Repository.GetUserByID` and
+  `memRepo.GetUserByID`); the goldens caught it. Keyed on name +
+  signature, the goldens are unchanged.
+- **`collapse_duplicates` = on**: identical declarations in several files
+  pack as one line with `(+N more files)` (JSON `also_in`), and don't take
+  file slots.
+- **`seeds_per_term`** (extra seeds for long prompts): 2 and 4 raised the
+  query hit rate by 2–2.6 points but cost 11–18% more tokens, so it is
+  **off** ("lightest").
+- `find_relevant`'s always-loaded description now also points to
+  `callers_of` and `impact_of` (about 20 tokens): Claude grepped for callers
+  in the A/B.
+- Measured, both switches off → on, averaged over django, prometheus and
+  vite:
+  - MRR tune 0.587 → 0.588, holdout 0.541 → 0.546;
+  - hook hit 67.3 → 67.7%, query hit 73.7 → 75.0%;
+  - tokens unchanged; per repo within ±0.007 MRR.
+  - On openverse, Claude's second A/B query went from 18 to 4
+    environment-constant lines.
+- **Still open:** wording that misleads (the "presigned" case). A per-file
+  seed cap is a candidate for later.

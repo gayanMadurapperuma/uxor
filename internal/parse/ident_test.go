@@ -2,6 +2,7 @@ package parse
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -25,10 +26,21 @@ func TestSplit(t *testing.T) {
 }
 
 func TestSplitText(t *testing.T) {
-	if got := SplitText("getUserById"); got != "0getUserById get user by id" {
-		t.Errorf("got %q", got)
+	for in, want := range map[string]string{
+		"user":       "user",
+		"formatUser": "0formatUser format user",
+		// Word-aligned parts of 2+ words, so "signIn" reaches handleSignIn
+		// but no prefix crosses a word (D38).
+		"handleSignIn": "0handleSignIn 0handlesign 0signin handle sign in",
+		"getUserById":  "0getUserById 0getuser 0getuserby 0userby 0userbyid 0byid get user by id",
+	} {
+		if got := SplitText(in); got != want {
+			t.Errorf("SplitText(%q) = %q, want %q", in, got, want)
+		}
 	}
-	if got := SplitText("user"); got != "user" {
-		t.Errorf("got %q", got)
+	// Past maxPartWords words only parts of 2-3 words are added.
+	long := SplitText("getUserProfileImageUrlFromCache") // 7 words
+	if !strings.Contains(long, " 0getuserprofile ") || strings.Contains(long, " 0getuserprofileimage ") {
+		t.Errorf("long identifier parts: %q", long)
 	}
 }

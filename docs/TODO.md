@@ -41,11 +41,10 @@ CLI (`uxor init`, `uxor query`). Earlier picks were dropped:
 Checked 2026-10-25 directly on the registries: free on crates.io, npm,
 PyPI and Homebrew, and no GitHub repo with more than 2 stars. Name checks
 must query the registries, not just web search (that missed `hansa-cli`).
-The rename is planned as its own step. It touches the binary, the Go
-module path, the MCP server name, the `.uxor/` directory,
-`.uxor.yaml`, the CLAUDE.md markers, `UXOR_*` environment
-variables and the docs, and needs a migration path for projects already
-set up as codegraph.
+The rename is done (D36): every codegraph name became uxor, and
+`uxor init` / `uxor index` migrate projects set up under the old names.
+GitHub repo and remote renamed by the user; everything committed in
+`9be7237`.
 
 ---
 
@@ -83,7 +82,7 @@ prompt, instead of grepping and reading whole files.
 - Keep dependencies minimal; justify any new one.
 - Every phase needs `go test ./...` and `go vet` passing (`make test`).
 - Record design decisions in `docs/DECISIONS.md` (next free number:
-  **D37**).
+  **D40**).
 - Commit or push only when the user asks.
 
 **User-added requirements**
@@ -154,7 +153,7 @@ internal/setup/         setup.go (MCP entry, hooks, CLAUDE.md snippet; Plan/Appl
 internal/testfix/       test-only: copy + index fixtures
 examples/               .mcp.json, settings.json, CLAUDE.snippet.md (generated)
 testdata/fixtures/      go / python / ts / js mini projects (resolvable)
-docs/                   DECISIONS.md (D1–D36), TESTING.md, TODO.md, BENCHMARKS.md,
+docs/                   DECISIONS.md (D1–D39), TESTING.md, TODO.md, BENCHMARKS.md,
                         ARCHITECTURE.md (the A–Z guide, Mermaid diagrams)
 Makefile                build / test / golden (+examples) / bench REPO= / eval REPO= N=
 ```
@@ -327,16 +326,22 @@ with the eval (django, prometheus, vite).
   for "login function"; "called-by" helpers add noise.
 
 ### Next: rename to uxor, then the "lightest & most trustworthy" work (plan each first)
-- [x] Rename codegraph → uxor (D36): done; the user still renames the GitHub repo and git remote. module path, binary, MCP server name, data
-  dir and config file, markers, env vars, docs; migrate projects already
-  set up. The user renames the GitHub repo at the same time.
-- [ ] `alwaysLoad` in `.mcp.json` (fixes Claude grepping instead of using
-  the tools).
+- [x] Rename codegraph → uxor (D36). The user renamed the GitHub repo,
+  updated the remote and committed (`9be7237`).
+- [x] `find_relevant` always loaded, via tool `_meta` `anthropic/alwaysLoad`
+  (D37). The user should confirm in a fresh session (`/context`).
+- [x] Diverse seeds (one per identical declaration), collapsed duplicate
+  lines, and `find_relevant` pointing to `callers_of`/`impact_of` (D39),
+  from the first real A/B. Open: misleading query words, and a per-file
+  seed cap as a candidate.
+- [ ] Real A/B on openverse (the user is running it): upload prompt +
+  logout bug, uxor on and off, `/context` Messages and tool calls.
 - [ ] Freshness after edits outside Claude (git pull, editors), without a
   daemon.
 - [ ] Agent-level benchmark: the same task in `claude -p`, with and
   without, real tokens and cost.
-- [ ] Ranking: fewer, better lines (helper noise, exact-name dominance).
+- [x] Ranking: word-aligned identifier parts (`signIn` → `handleSignIn`), and
+  one related line per file (−7% hook / −12% query tokens) (D38).
 
 ### Later: more languages, Java and Rust (postponed by the user, 2026-10-24)
 Chosen languages; the product is tuned first (Phase 5.5). Per language: the official tree-sitter

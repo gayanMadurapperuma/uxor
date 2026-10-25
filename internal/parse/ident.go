@@ -50,15 +50,31 @@ func Split(s string) []string {
 // ("handleDelete"). Exact identifier searches use WholeTerm (D31).
 const WholeMarker = "0"
 
-// SplitText returns, for full-text indexing, the marked whole identifier
-// followed by its split parts, so both the exact identifier and its words
-// match. A one-word identifier is just itself.
+// maxPartWords bounds the word-aligned parts SplitText adds: up to this
+// many words every contiguous run of 2+ words, beyond it runs of 2-3 only.
+const maxPartWords = 6
+
+// SplitText returns, for full-text indexing, the marked whole identifier,
+// the marked word-aligned parts of 2+ words (handleSignIn → handlesign,
+// signin), then its split words. So the exact identifier, any run of its
+// words (D38) and each word match, and no prefix ever spans a word (D31).
+// A one-word identifier is just itself.
 func SplitText(s string) string {
 	parts := Split(s)
 	if len(parts) <= 1 {
 		return s
 	}
-	return WholeMarker + s + " " + strings.Join(parts, " ")
+	out := []string{WholeMarker + s}
+	longest := len(parts) - 1 // the whole is already there
+	if len(parts) > maxPartWords {
+		longest = 3
+	}
+	for i := range parts {
+		for n := 2; n <= longest && i+n <= len(parts); n++ {
+			out = append(out, WholeMarker+strings.Join(parts[i:i+n], ""))
+		}
+	}
+	return strings.Join(append(out, parts...), " ")
 }
 
 // WholeTerm is the search term for a whole multi-word identifier, matching

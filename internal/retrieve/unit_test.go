@@ -2,6 +2,7 @@ package retrieve
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -194,11 +195,11 @@ func TestFuse(t *testing.T) {
 func TestPack(t *testing.T) {
 	// Sorted by score, as rank returns them.
 	cands := []candidate{
-		{ID: 2, Kind: parse.KindMethod, Name: "m", Signature: "def m(self)", Path: "a.py", StartLine: 3, EndLine: 4, Parent: 1, Score: 3},
-		{ID: 3, Kind: parse.KindFunction, Name: "f", Signature: "def f()", Path: "b.py", StartLine: 1, EndLine: 2, Score: 2.5},
-		{ID: 1, Kind: parse.KindClass, Name: "C", Signature: "class C", Path: "a.py", StartLine: 1, EndLine: 9, Score: 2},
-		{ID: 4, Kind: parse.KindMethod, Name: "find", Signature: "find(id: number)", Path: "c.ts", StartLine: 5, EndLine: 6, Score: 1},
-		{ID: 5, Kind: parse.KindFunction, Name: "weak", Signature: "def weak()", Path: "d.py", StartLine: 1, EndLine: 2, Score: 0.7},
+		{ID: 2, Kind: parse.KindMethod, Name: "m", Signature: "def m(self)", Path: "a.py", StartLine: 3, EndLine: 4, Parent: 1, Score: 3, Why: "match"},
+		{ID: 3, Kind: parse.KindFunction, Name: "f", Signature: "def f()", Path: "b.py", StartLine: 1, EndLine: 2, Score: 2.5, Why: "match"},
+		{ID: 1, Kind: parse.KindClass, Name: "C", Signature: "class C", Path: "a.py", StartLine: 1, EndLine: 9, Score: 2, Why: "match"},
+		{ID: 4, Kind: parse.KindMethod, Name: "find", Signature: "find(id: number)", Path: "c.ts", StartLine: 5, EndLine: 6, Score: 1, Why: "match"},
+		{ID: 5, Kind: parse.KindFunction, Name: "weak", Signature: "def weak()", Path: "d.py", StartLine: 1, EndLine: 2, Score: 0.7, Why: "match"},
 	}
 	files, text := pack(cands, 1000, 0, DefaultTuning())
 	want := "a.py:1-9  class C\n  a.py:3-4  def m(self)\nb.py:1-2  def f()\nc.ts:5-6  method find(id: number)\n"
@@ -226,5 +227,121 @@ func TestPack(t *testing.T) {
 	}
 	if files, _ := pack(cands, 1000, 1, DefaultTuning()); len(files) != 1 {
 		t.Errorf("max files 1: %+v", files)
+	}
+}
+
+// TestPackRelatedPerFile: lines reached only through the graph are capped
+// per file, keeping the best; matches never are (D38).
+func TestPackRelatedPerFile(t *testing.T) {
+	cands := []candidate{ // sorted by score
+		{ID: 1, Name: "signIn", Signature: "signIn()", Path: "repo.ts", StartLine: 10, EndLine: 20, Score: 1.2, Why: "match"},
+		{ID: 2, Name: "signOut", Signature: "signOut()", Path: "repo.ts", StartLine: 22, EndLine: 25, Score: 1.1, Why: "match"},
+		{ID: 3, Name: "mapError", Signature: "mapError()", Path: "repo.ts", StartLine: 40, EndLine: 50, Score: 0.6, Why: "called-by signIn"},
+		{ID: 4, Name: "mapUser", Signature: "mapUser()", Path: "repo.ts", StartLine: 30, EndLine: 38, Score: 0.5, Why: "called-by signIn"},
+		{ID: 5, Name: "useAuth", Signature: "useAuth()", Path: "ctx.ts", StartLine: 5, EndLine: 9, Score: 0.55, Why: "called-by LoginClient"},
+	}
+	names := func(limit int) []string {
+		tu := DefaultTuning()
+		tu.RelatedPerFile = limit
+		files, _ := pack(cands, 1000, 0, tu)
+		var out []string
+		for _, f := range files {
+			for _, s := range f.Symbols {
+				out = append(out, s.Name)
+			}
+		}
+		return out
+	}
+	if got := names(-1); len(got) != 5 {
+		t.Errorf("no cap: %v", got)
+	}
+	if got := names(1); !reflect.DeepEqual(got, []string{"signIn", "signOut", "mapError", "useAuth"}) {
+		t.Errorf("cap 1: %v", got)
+	}
+	if got := names(0); !reflect.DeepEqual(got, []string{"signIn", "signOut"}) {
+		t.Errorf("cap 0: %v", got)
+	}
+}
+
+// TestSeedsPerName: a constant declared in many files can't take every seed
+// slot; with the cap, other names get the freed slots (D39).
+func TestSeedsPerName(t *testing.T) {
+	st := openTemp(t)
+	for i := 1; i <= 8; i++ { // COVER_BUCKET in 8 files: the strongest match
+		exec(t, st, fmt.Sprintf(`INSERT INTO symbols(id, file_id, kind, name, qualified_name, start_line, end_line) VALUES (%d, %d, 6, 'COVER_BUCKET', 'COVER_BUCKET', 1, 1)`, i, i))
+		exec(t, st, fmt.Sprintf(`INSERT INTO symbols_fts(rowid, name, qualified_name, signature, path) VALUES (%d, 'cover bucket', 'cover bucket', '', 'f%d.ts')`, i, i))
+	}
+	exec(t, st, `INSERT INTO symbols(id, file_id, kind, name, qualified_name, start_line, end_line) VALUES (9, 9, 3, 'CoverUploadController', 'CoverUploadController', 1, 9)`)
+	exec(t, st, `INSERT INTO symbols_fts(rowid, name, qualified_name, signature, path) VALUES (9, 'cover upload controller', 'cover upload controller', 'class CoverUploadController', 'upload.ts')`)
+	q := Query{Terms: []string{"cover", "bucket"}}
+	ids := func(perName int) []int64 {
+		tu := DefaultTuning()
+		tu.SeedsPerName = perName
+		seeds, err := (&FTS{DB: st.DB(), Tuning: tu}).Seeds(context.Background(), q, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []int64
+		for _, s := range seeds {
+			out = append(out, s.ID)
+		}
+		return out
+	}
+	if got := ids(0); slices.Contains(got, 9) {
+		t.Errorf("without the cap the 8 copies should fill all 3 slots: %v", got)
+	}
+	if got := ids(2); len(got) != 3 || !slices.Contains(got, 9) {
+		t.Errorf("with 2 per name the controller should take a slot: %v", got)
+	}
+	// Same name, different signature (interface method and implementation):
+	// not identical declarations, so the cap keeps both.
+	exec(t, st, `UPDATE symbols SET signature = 'const COVER_BUCKET: string' WHERE id = 1`)
+	if got := ids(1); !slices.Contains(got, 1) || !slices.Contains(got, 2) {
+		t.Errorf("same name, different signatures must both stay: %v", got)
+	}
+}
+
+func TestSeedCount(t *testing.T) {
+	tu := DefaultTuning()
+	if n := seedCount(20, 12, tu); n != 20 {
+		t.Errorf("off: %d", n)
+	}
+	tu.SeedsPerTerm = 2
+	for terms, want := range map[int]int{3: 20, 5: 20, 10: 30, 40: 60} {
+		if n := seedCount(20, terms, tu); n != want {
+			t.Errorf("%d terms: %d, want %d", terms, n, want)
+		}
+	}
+	if n := seedCount(80, 3, tu); n != 80 {
+		t.Errorf("a configured count above the cap is kept: %d", n)
+	}
+}
+
+// TestPackCollapseDuplicates: an identical declaration in many files is
+// packed once, noting the others; its files don't take answer slots (D39).
+func TestPackCollapseDuplicates(t *testing.T) {
+	var cands []candidate
+	for i := 1; i <= 8; i++ {
+		cands = append(cands, candidate{ID: int64(i), Kind: parse.KindVar, Name: "COVER_BUCKET",
+			Signature: "const COVER_BUCKET = process.env.COVER_BUCKET!", Path: fmt.Sprintf("lambda/f%d/index.ts", i),
+			StartLine: 3, EndLine: 3, Score: 1.0 - float64(i)/100, Why: "match"})
+	}
+	cands = append(cands, candidate{ID: 9, Kind: parse.KindClass, Name: "Uploader", Signature: "class Uploader",
+		Path: "upload.ts", StartLine: 1, EndLine: 9, Score: 0.8, Why: "match"})
+	tu := DefaultTuning()
+	tu.CollapseDuplicates = true
+	files, text := pack(cands, 1000, 2, tu) // 2 files, as the hook caps them
+	if strings.Count(text, "const COVER_BUCKET =") != 1 || !strings.Contains(text, "(+7 more files)") {
+		t.Errorf("not collapsed:\n%s", text)
+	}
+	if len(files) != 2 || !strings.Contains(text, "upload.ts") {
+		t.Errorf("the copies took the file slots:\n%s", text)
+	}
+	if got := files[0].Symbols[0].AlsoIn; len(got) != 7 {
+		t.Errorf("also_in: %v", got)
+	}
+	tu.CollapseDuplicates = false
+	if _, text := pack(cands, 1000, 2, tu); strings.Contains(text, "more files") {
+		t.Errorf("collapsed while off:\n%s", text)
 	}
 }

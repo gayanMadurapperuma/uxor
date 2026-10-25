@@ -270,6 +270,12 @@ uxor block between its markers when the wording has changed
 Time the prompt hook with `time (echo … | uxor hook prompt)`. The
 budget is 300 ms; django measured p95 40 ms.
 
+**Check that `find_relevant` is always loaded**: in a fresh `claude`
+session in the project, run `/context`. `find_relevant` should be listed
+among the loaded tools, not as "deferred" / "loaded on-demand"; the other
+four uxor tools may be deferred. This needs Claude Code v2.1.285 or later
+(`claude --version`).
+
 ## 9. The MCP server by hand
 
 ```bash

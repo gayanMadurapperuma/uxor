@@ -202,3 +202,31 @@ func TestMigrateV3RebuildsFTS(t *testing.T) {
 		t.Errorf("%d old-format rows survived", n)
 	}
 }
+
+// TestWordAlignedParts: a run of an identifier's words is searchable as a
+// marked whole ("signIn" reaches handleSignIn), but a fragment that isn't
+// word-aligned never is (D31, D38).
+func TestWordAlignedParts(t *testing.T) {
+	ctx := context.Background()
+	st := openTemp(t)
+	r := &parse.FileResult{Path: "web/auth.ts", Lang: "typescript", LOC: 9, Symbols: []parse.Symbol{
+		{Kind: parse.KindModule, Name: "web/auth", QualifiedName: "web/auth", StartLine: 1, EndLine: 9, Parent: -1},
+		{Kind: parse.KindFunction, Name: "handleSignIn", QualifiedName: "AuthProvider.handleSignIn", StartLine: 2, EndLine: 4},
+		{Kind: parse.KindMethod, Name: "handleDelete", QualifiedName: "Repo.handleDelete", StartLine: 5, EndLine: 7},
+	}}
+	meta := FileMeta{Path: r.Path, Lang: r.Lang, Hash: []byte{1}, Size: 1, MTime: 1, LOC: 9}
+	write(t, st, func(b *Batch) error { return b.ReplaceFile(ctx, meta, r, false) })
+	q := `SELECT count(*) FROM symbols_fts WHERE symbols_fts MATCH ?`
+	for term, want := range map[string]int{
+		`"` + parse.WholeTerm("signIn") + `"`:       1, // a word run inside handleSignIn
+		`"` + parse.WholeTerm("authProvider") + `"`: 1, // a whole qualified-name part
+		`"0handled"`: 0, // "handle"+"d": not word-aligned
+		`"handled"*`: 0, // word prefixes stay inside words
+		// Marked tokens are only ever matched exactly; retrieval never
+		// prefix-queries them (only the off-by-default whole_prefix does).
+	} {
+		if n := count(t, st, q, term); n != want {
+			t.Errorf("%s matched %d rows, want %d", term, n, want)
+		}
+	}
+}

@@ -92,16 +92,17 @@ func candidates(ctx context.Context, st *store.Store, cfg *config.Config, query 
 	}
 
 	db := st.DB()
+	n := seedCount(cfg.Retrieve.Seeds, len(q.Terms), t)
 	sources := []Source{&FTS{DB: db, Tuning: t}}
 	lists := make([][]Seed, 0, len(sources))
 	for _, s := range sources {
-		seeds, err := s.Seeds(ctx, q, cfg.Retrieve.Seeds)
+		seeds, err := s.Seeds(ctx, q, n)
 		if err != nil {
 			return nil, err
 		}
 		lists = append(lists, seeds)
 	}
-	seeds := Fuse(lists, cfg.Retrieve.Seeds)
+	seeds := Fuse(lists, n)
 	if err := adjustTestSeeds(ctx, db, seeds, q, t); err != nil {
 		return nil, err
 	}
@@ -121,6 +122,19 @@ func candidates(ctx context.Context, st *store.Store, cfg *config.Config, query 
 	}
 	mark("rank")
 	return cands, nil
+}
+
+// maxSeeds bounds seedCount, keeping the seeds stage fast on long prompts.
+const maxSeeds = 60
+
+// seedCount is the configured seed count plus t.SeedsPerTerm per search
+// term beyond 5, at most maxSeeds (never below the configured count).
+func seedCount(base, terms int, t *Tuning) int {
+	n := base + t.SeedsPerTerm*max(0, terms-5)
+	if n > maxSeeds {
+		n = max(base, maxSeeds)
+	}
+	return n
 }
 
 func ms(d time.Duration) float64 { return round(float64(d.Microseconds()) / 1000) }

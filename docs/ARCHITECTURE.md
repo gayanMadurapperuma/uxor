@@ -505,7 +505,11 @@ Key design points (D4, D7):
   plus the **marked whole identifier** (`getUserById` →
   `0getUserById get user by id`), never source. The `0` marker keeps
   prefix searches inside words: `"handled"*` must not match
-  `handleDelete` (D31, schema v3).
+  `handleDelete` (D31). Identifiers of 3+ words also index their
+  **word-aligned runs** as marked tokens (`handleSignIn` →
+  `0handlesign 0signin`), so searching `signIn` reaches `handleSignIn` and
+  `signInAction` without any prefix crossing a word (D38). That adds about
+  1% to the index.
 - Enums (`kind`, `type`) are small integers, append-only so old indexes stay
   valid. **Migrations** are an ordered list keyed by `PRAGMA user_version`.
 - **Connection settings**: WAL, `synchronous=NORMAL`, `mmap_size=256MiB`,
@@ -912,6 +916,10 @@ they fit.
   skipped so a shorter one can still fit; the best line is always included.
 - **Relative cutoff**: candidates below **25% of the best** are dropped. The
   budget is a ceiling, not a target.
+- **One related line per file** (`related_per_file`): lines reached only
+  through the graph, not matches, are capped per file, keeping the best.
+  That's 7% fewer hook tokens and 12% fewer query tokens at equal hit
+  rates (D38).
 - Files are ordered by **best symbol + 0.25 × the next three**, so several
   hits lift a file but many weak ones can't beat one strong one.
 - Output: `path:start-end  [kind] signature`, methods indented under their
@@ -936,6 +944,11 @@ Every constant above lives in one struct, `retrieve.Tuning`
 | `test_penalty` / `test_boost` | 1.0 / 1.5 | test code factor without / with test intent |
 | `rest_weight` / `rest_count` | 0.25 / 3 | file score from its next symbols |
 | `min_rel_score` | 0.25 | relative cutoff |
+| `related_per_file` | 1 | graph-only lines kept per file (−1: no cap) |
+| `seeds_per_name` | 1 | seeds per identical declaration (same name and signature); 0: no cap |
+| `seeds_per_term` | 0 | extra seeds per search term beyond 5 (off: costs tokens) |
+| `collapse_duplicates` | on | identical declarations in many files pack as one line, `(+N more files)` |
+| `synonyms` / `compounds` | on / off | query expansions (D32, D35) |
 
 **Code:** `internal/retrieve` (`retrieve.go`, `tokenize.go`, `source.go`,
 `fts.go`, `expand.go`, `rank.go`, `pack.go`, `tuning.go`); D16–D19, D26,
@@ -977,6 +990,13 @@ The lifecycle: `initialize` (capabilities and server *instructions*) →
 | `callers_of` | `symbol`, `limit?` | callers, best-resolved first, guesses marked |
 | `callees_of` | `symbol`, `limit?` | what it calls |
 | `impact_of` | `path` | importers, callers, subtypes, tests from other files |
+
+**`find_relevant` is always loaded.** Claude Code defers MCP tools by
+default: the model sees only their names until it searches for one, and a
+deferred tool tends to lose to a built-in grep. uxor marks `find_relevant`
+alone with `_meta: {"anthropic/alwaysLoad": true}` (Claude Code v2.1.285+),
+so it's in context from the first prompt, while the other four stay
+deferred: one tool definition in context, not five (D37).
 
 Every result is **text plus structured content** (the same data as JSON). The
 store opens **lazily and read-only** on the first call; every call checks
@@ -1283,7 +1303,7 @@ flowchart TD
 
 | File | What's in it |
 |---|---|
-| [`DECISIONS.md`](DECISIONS.md) | every design decision D1–D33, with reasons and measurements |
+| [`DECISIONS.md`](DECISIONS.md) | every design decision D1–D39, with reasons and measurements |
 | [`BENCHMARKS.md`](BENCHMARKS.md) | full eval results, savings tables, worked examples, caveats |
 | [`TESTING.md`](TESTING.md) | how to check every feature by hand |
 | [`TODO.md`](TODO.md) | roadmap, status, code map, known issues |
@@ -1298,6 +1318,6 @@ Decision index by topic:
 | parsing | D5, D20, D30 |
 | indexing | D6, D11, D29 |
 | resolution and graph | D12, D13, D14, D15 |
-| retrieval | D16, D17, D18, D19, D26, D28, D31, D32 |
-| MCP, hooks, init | D21, D22, D23, D33 |
+| retrieval | D16, D17, D18, D19, D26, D28, D31, D32, D35, D38, D39 |
+| MCP, hooks, init | D21, D22, D23, D33, D37 |
 | eval and savings | D25, D26, D27, D28 |

@@ -68,6 +68,13 @@ func TestTools(t *testing.T) {
 	var names []string
 	for _, tl := range tools.Tools {
 		names = append(names, tl.Name)
+		if tl.Name == "find_relevant" && (!strings.Contains(tl.Description, "callers_of") || !strings.Contains(tl.Description, "impact_of")) {
+			t.Errorf("find_relevant should point to callers_of and impact_of: %q", tl.Description)
+		}
+		// Only find_relevant asks to load upfront (D37).
+		if got, want := tl.Meta[mcpserver.AlwaysLoadKey] == true, tl.Name == "find_relevant"; got != want {
+			t.Errorf("%s: alwaysLoad %v, want %v (meta %v)", tl.Name, got, want, tl.Meta)
+		}
 	}
 	if got := strings.Join(names, ","); got != "callees_of,callers_of,find_relevant,get_symbol,impact_of" {
 		t.Errorf("tools: %s", got)

@@ -50,6 +50,20 @@ type Tuning struct {
 	// MinRelScore drops candidates scoring below this fraction of the best:
 	// the budget is a ceiling, not a target, and weak tails only cost tokens.
 	MinRelScore float64 `json:"min_rel_score"`
+	// RelatedPerFile caps the lines per file that were reached only through
+	// the graph (not matches), keeping the best; -1 means no cap (D38).
+	RelatedPerFile int `json:"related_per_file"`
+	// SeedsPerName keeps at most this many seeds per identical declaration
+	// (same name and signature), so a constant copied into many files can't
+	// take every seed slot. An interface method and its implementation
+	// differ in signature and both stay; 0 means no cap (D39).
+	SeedsPerName int `json:"seeds_per_name"`
+	// SeedsPerTerm adds seeds for long prompts: retrieve.seeds plus this
+	// many per search term beyond 5, at most maxSeeds; 0 means off (D39).
+	SeedsPerTerm int `json:"seeds_per_term"`
+	// CollapseDuplicates packs identical declarations (same name, kind and
+	// signature) found in several files once, noting the other files (D39).
+	CollapseDuplicates bool `json:"collapse_duplicates"`
 }
 
 // DefaultTuning returns the shipped constants.
@@ -69,13 +83,16 @@ func DefaultTuning() *Tuning {
 			parse.EdgeTests.String():      {0.5, 0.5},
 			parse.EdgeImports.String():    {0.3, 0.3},
 		},
-		PagerankWeight: 0.1,
-		TestedBonus:    0.05,
-		TestPenalty:    1.0, // no penalty by default since D28
-		TestBoost:      1.5,
-		RestWeight:     0.25,
-		RestCount:      3,
-		MinRelScore:    0.25,
+		PagerankWeight:     0.1,
+		TestedBonus:        0.05,
+		TestPenalty:        1.0, // no penalty by default since D28
+		TestBoost:          1.5,
+		RestWeight:         0.25,
+		RestCount:          3,
+		MinRelScore:        0.25,
+		RelatedPerFile:     1,    // −7% hook / −12% query tokens at equal hit rates (D38)
+		SeedsPerName:       1,    // +1.0 hook / +1.6 query hit points, same tokens (D39)
+		CollapseDuplicates: true, // identical declarations in many files: one line (D39)
 	}
 }
 
