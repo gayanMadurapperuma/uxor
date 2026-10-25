@@ -171,6 +171,21 @@ changed is what this benchmark can't see, as on the real project:
 
 The tables above this section are from before Phase 5.5.
 
+## Answer size update (D38, 2026-10-25)
+
+Word-aligned identifier parts plus one related line per file, averaged
+over the three repos (100 commits each, honest mode):
+
+| | hook hit | query hit | hook tokens/prompt | find_relevant tokens |
+|---|---|---|---|---|
+| before | 69.0% | 75.3% | 404 | 774 |
+| after | 67.3% | 73.7% | **375** | **682** |
+
+That's 7% fewer tokens on every prompt and 12% fewer per `find_relevant`
+call. Hit rates are 1.6–1.7 points lower, mostly from the identifier parts
+on django and prometheus. The parts are kept because they fix the real
+case: "login" now reaches `AuthProvider.handleSignIn` in openverse.
+
 ## Reproduce
 ```bash
 git clone --depth 500 https://github.com/django/django.git /tmp/django

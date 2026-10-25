@@ -65,21 +65,26 @@ func (f *FTS) Seeds(ctx context.Context, q Query, n int) ([]Seed, error) {
 		exact[id] = true
 	}
 	byID := map[int64]*Seed{}
+	decls := map[int64]string{} // name + signature, for the identical-declaration cap
+	fetch := 2
+	if t.SeedsPerName > 0 {
+		fetch = 5 // spare rows refill the slots of capped declarations
+	}
 
 	if expr := matchExpr(q, t.PrefixMinLen, t.WholePrefix); expr != "" {
 		rows, err := f.DB.QueryContext(ctx, `
-			SELECT s.id, s.name, `+t.ftsRank()+` AS r
+			SELECT s.id, s.name, s.signature, `+t.ftsRank()+` AS r
 			FROM symbols_fts JOIN symbols s ON s.id = symbols_fts.rowid
-			WHERE symbols_fts MATCH ? ORDER BY r LIMIT ?`, expr, 2*n)
+			WHERE symbols_fts MATCH ? ORDER BY r LIMIT ?`, expr, fetch*n)
 		if err != nil {
 			return nil, err
 		}
 		best := 0.0
 		for rows.Next() {
 			var id int64
-			var name string
+			var name, sig string
 			var r float64
-			if err := rows.Scan(&id, &name, &r); err != nil {
+			if err := rows.Scan(&id, &name, &sig, &r); err != nil {
 				rows.Close()
 				return nil, err
 			}
@@ -95,6 +100,7 @@ func (f *FTS) Seeds(ctx context.Context, q Query, n int) ([]Seed, error) {
 				s.Why = "match: exact name"
 			}
 			byID[id] = s
+			decls[id] = name + "\x00" + sig
 		}
 		rows.Close()
 		if err := rows.Err(); err != nil {
@@ -108,18 +114,20 @@ func (f *FTS) Seeds(ctx context.Context, q Query, n int) ([]Seed, error) {
 			args = append(args, id)
 		}
 		args = append(args, int(parse.KindModule), n)
-		rows, err := f.DB.QueryContext(ctx, `SELECT id FROM symbols WHERE name IN (`+placeholders(len(q.Idents))+`) AND kind != ? LIMIT ?`, args...)
+		rows, err := f.DB.QueryContext(ctx, `SELECT id, name, signature FROM symbols WHERE name IN (`+placeholders(len(q.Idents))+`) AND kind != ? LIMIT ?`, args...)
 		if err != nil {
 			return nil, err
 		}
 		for rows.Next() {
 			var id int64
-			if err := rows.Scan(&id); err != nil {
+			var name, sig string
+			if err := rows.Scan(&id, &name, &sig); err != nil {
 				rows.Close()
 				return nil, err
 			}
 			if byID[id] == nil {
 				byID[id] = &Seed{ID: id, Score: t.ExactBoost, Why: "match: exact name"}
+				decls[id] = name + "\x00" + sig
 			}
 		}
 		rows.Close()
@@ -138,6 +146,17 @@ func (f *FTS) Seeds(ctx context.Context, q Query, n int) ([]Seed, error) {
 		}
 		return out[i].ID < out[j].ID
 	})
+	if t.SeedsPerName > 0 {
+		per := map[string]int{}
+		kept := out[:0]
+		for _, sd := range out {
+			if per[decls[sd.ID]] < t.SeedsPerName {
+				per[decls[sd.ID]]++
+				kept = append(kept, sd)
+			}
+		}
+		out = kept
+	}
 	if len(out) > n {
 		out = out[:n]
 	}

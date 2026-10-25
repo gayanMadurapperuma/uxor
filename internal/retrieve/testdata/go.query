@@ -17,8 +17,9 @@ api/handler.go:15-17  func NewHandler() *Handler  # match
 api/handler.go:19-25  func (h *Handler) Show(id int) string  # match
 api/handler.go:27-29  func (h *Handler) format(u *store.User) string  # match
 
-## tests for GetUserByID  (69 tokens)
+## tests for GetUserByID  (81 tokens)
 store/user.go:24-24  method GetUserByID(id int) (*User, error)  # match: exact name
+store/user.go:34-36  func NewMemRepo() *memRepo  # match
 store/user.go:38-44  func (r *memRepo) GetUserByID(id int) (*User, error)  # match: exact name
 store/user_test.go:5-10  test func TestGetUserByID(t *testing.T)  # match
 api/handler.go:32-35  func Render(repo store.Repository, id int) string  # match

@@ -17,6 +17,10 @@ import (
 	"github.com/gayanmadurapperuma/uxor/internal/store"
 )
 
+// AlwaysLoadKey is the tool _meta key that asks Claude Code (v2.1.285+) to
+// load a tool upfront rather than through tool search.
+const AlwaysLoadKey = "anthropic/alwaysLoad"
+
 // DisabledNotice is returned by every tool while the project is disabled.
 const DisabledNotice = "uxor is disabled for this project (`uxor enable` to resume); search the code directly."
 
@@ -44,9 +48,14 @@ func New(p *config.Project, version string) *Server {
 			"impact_of before refactoring. Results are file:line ranges to read, never code.",
 	})
 	mcp.AddTool(s.srv, &mcp.Tool{
+		// find_relevant alone loads upfront instead of behind Claude Code's
+		// tool search: a deferred tool loses to a built-in grep (D37). The
+		// other tools stay deferred, so one definition costs context, not five.
+		Meta: mcp.Meta{AlwaysLoadKey: true},
 		Name: "find_relevant",
 		Description: "Find the files and line ranges most relevant to a task or question, ranked and packed " +
-			"into a token budget. Use it before broad searches; then read only the listed ranges.",
+			"into a token budget. Use it before broad searches; then read only the listed ranges. " +
+			"For who-calls-X questions call callers_of; before changing a file call impact_of.",
 	}, s.findRelevant)
 	mcp.AddTool(s.srv, &mcp.Tool{
 		Name:        "get_symbol",

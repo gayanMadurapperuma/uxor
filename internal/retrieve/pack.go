@@ -26,7 +26,10 @@ type Symbol struct {
 	Signature     string  `json:"signature"`
 	Score         float64 `json:"score"`
 	Why           string  `json:"why"`
-	Depth         int     `json:"-"` // indentation: chosen ancestors
+	// AlsoIn lists other files declaring the same symbol identically,
+	// collapsed into this line (Tuning.CollapseDuplicates, D39).
+	AlsoIn []string `json:"also_in,omitempty"`
+	Depth  int      `json:"-"` // indentation: chosen ancestors
 }
 
 // Tokens estimates the tokens of s.
@@ -71,13 +74,32 @@ func pack(cands []candidate, budget, maxFiles int, t *Tuning) ([]File, string) {
 		}
 		return n
 	}
+	related := map[string]int{} // lines per file reached only through the graph
+	// dupOf maps a declaration (kind, name, signature) to the chosen line
+	// that stands for all its copies; alsoIn holds the copies' files.
+	dupOf := map[string]*candidate{}
+	alsoIn := map[int64][]string{}
 	for i := range cands {
 		c := &cands[i]
 		if c.Score < t.MinRelScore*cands[0].Score {
 			break // cands are sorted by score
 		}
+		if t.CollapseDuplicates {
+			key := c.Kind.String() + "\x00" + c.Name + "\x00" + c.Signature
+			if first := dupOf[key]; first != nil && first.Path != c.Path {
+				if len(alsoIn[first.ID]) == 0 {
+					used += len("  (+99 more files)") // reserve the suffix once
+				}
+				alsoIn[first.ID] = append(alsoIn[first.ID], c.Path)
+				continue // the best copy already stands for this one
+			}
+		}
 		if !files[c.Path] && maxFiles > 0 && len(files) >= maxFiles {
 			continue
+		}
+		isRelated := !strings.HasPrefix(c.Why, "match")
+		if isRelated && t.RelatedPerFile >= 0 && related[c.Path] >= t.RelatedPerFile {
+			continue // matches are never capped; the best related lines come first
 		}
 		cost := len(Render(c.Path, symbol(c, depth(c)), false)) + 1 + 2*shifted(c.ID)
 		if used+cost > limit && len(chosen) > 0 {
@@ -86,6 +108,15 @@ func pack(cands []candidate, budget, maxFiles int, t *Tuning) ([]File, string) {
 		chosen[c.ID] = c
 		files[c.Path] = true
 		used += cost
+		if t.CollapseDuplicates {
+			key := c.Kind.String() + "\x00" + c.Name + "\x00" + c.Signature
+			if dupOf[key] == nil {
+				dupOf[key] = c
+			}
+		}
+		if isRelated {
+			related[c.Path]++
+		}
 	}
 
 	byFile := map[string][]*candidate{}
@@ -105,7 +136,9 @@ func pack(cands []candidate, budget, maxFiles int, t *Tuning) ([]File, string) {
 			return cs[i].ID < cs[j].ID
 		})
 		for _, c := range cs {
-			f.Symbols = append(f.Symbols, symbol(c, depth(c)))
+			sym := symbol(c, depth(c))
+			sym.AlsoIn = alsoIn[c.ID]
+			f.Symbols = append(f.Symbols, sym)
 		}
 		out = append(out, f)
 	}
@@ -155,6 +188,9 @@ func Render(path string, s Symbol, why bool) string {
 		l += s.Kind + " "
 	}
 	l += sig
+	if n := len(s.AlsoIn); n > 0 {
+		l += fmt.Sprintf("  (+%d more files)", n)
+	}
 	if why {
 		l += "  # " + s.Why
 	}

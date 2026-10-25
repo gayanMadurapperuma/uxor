@@ -41,6 +41,8 @@ var migrations = []migration{
 	{fn: rebuildFTS},
 	// v5: underscores split words before marking (D35).
 	{fn: rebuildFTS},
+	// v6: marked word-aligned parts of identifiers (D38).
+	{fn: rebuildFTS},
 }
 
 // SchemaVersion is the user_version after all migrations.
